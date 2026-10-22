@@ -1,5 +1,13 @@
 {
-  "description": "计算机课程实验与 Word 报告 Skill：真实证据、模板保护、自然中文写作与最终页面核验。",
+  "description": "实验报告与实验论文 Skill：可溯源意图确认、真实证据、模板样式、独立审查与状态恢复。",
   "homepage": "",
-  "topics": ["agent-skills", "codex", "claude-code", "lab-report", "academic-writing", "docx", "chinese"]
+  "topics": [
+    "agent-skills",
+    "codex",
+    "claude-code",
+    "lab-report",
+    "academic-writing",
+    "docx",
+    "chinese"
+  ]
 }

@@ -23,3 +23,9 @@
 
 流程图按 diagram-design 的默认灰白与橙色设计规则独立绘制；示例与截图的来源在 README 中分别注明。
 
+
+## 2.0 的工作流与状态设计参考
+
+基线为 [lab-report 1.5 固定提交](https://github.com/2kilo3/lab-report/tree/f2b8b76167f029896bdda91b49cfc8fc82d1d567)。本轮保持既有写作原则和许可声明，按已确认需求扩展到材料驱动的实验文档。
+
+参考用户参与的 [Bocchiid-Self-Skills](https://github.com/Bocchiid/Bocchiid-Self-Skills) 中 report-planner 的任务/证据规划、report-writer 的模板保护以及 report-worker 的复核路由和持久记录思路。这里采用自行编写的简化规则和标准库辅助器，没有复制或嵌入该项目代码，不继承其固定格式或默认审批安排。成果与检查条件必须先满足再推进；不能在守门失败后强制跳状态。状态记录帮助恢复，不证明真实授权或审查质量。
