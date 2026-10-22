@@ -27,7 +27,7 @@
 
 checks 必须包含 requirements、evidence、writing、format、render、final_file。每项是含 status 与 reason 的对象；status 只接受 pass 或 not_applicable，reason 必须非空。没有截图/无版面对象可据实标不适用，缺渲染能力或尚未检查不能写不适用。审核失败、未知、缺关键证据不允许完成；先按问题影响范围 rollback 修订，再交独审复核。收据是独审输出，不应由制作 Agent 为凑条件生成。
 
-requirements、writing、final_file 必须 pass，不可标不适用；其余条件项不适用需真实原因，缺工具/未验证不是不适用。
+requirements、writing、final_file 必须 pass，不可标不适用；其余条件项不适用需真实原因，缺工具/未验证不是不适用。final_file 的 reason 应包含或定位到最终交付文件中适用人物元数据的回读记录，核对已确认姓名目标；不能仅写“作者已修改”。按 [文档输出](document-output.md) 记录实际值，软件生成器字段另行区分。仅审查输出为无人物元数据的纯文本等格式时说明这一事实，不虚构字段或改动作为来源的原报告。
 
 这不是质量评估器：字符串不能证明独立性，非空理由不能证明检查质量，文件摘要不能证明证据真实。宿主须启动真实独审上下文并核对实际输出；同权限恶意改写状态无法由此脚本阻止。摘要用于后台版本绑定，不是报告里替代真实自然操作的截图。
 
