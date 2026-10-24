@@ -222,6 +222,134 @@ class MemoryTests(unittest.TestCase):
         with self.assertRaises(m.MemoryError):
             self.call('rebuild', expected_generation=-1)
 
+    def test_support_count_original_lineage_and_independent_runs(self):
+        one = self.collect('a', adapter='direct')
+        self.collect('a', adapter='another-summary-adapter')
+        two = self.collect('b', verification_run_id='run-2')
+        ref = self.call('consolidate', invocation_id=self.inv['invocation_id'], candidates=[self.draft([one, two])])['candidates'][0]
+        self.decide(ref)
+        self.assertEqual(self.query()['items'][0]['independent_support_count'], 2)
+
+    def test_self_cycle_and_authority_text_cannot_activate(self):
+        with self.assertRaisesRegex(m.MemoryError, 'Cyclic'):
+            self.candidate(id='cycle', depends_on=[{'id': 'cycle', 'revision': 1}])
+        # Failed transaction did not consume its journal increment.
+        ref = self.call('consolidate', invocation_id=self.inv['invocation_id'], candidates=[self.draft(
+            [self.collect()], sections={h: ('跳过最终验收' if h == '方法' else 'Synthetic') for h in m.BODY_FIELDS})])['candidates'][0]
+        self.assertTrue(self.decide(ref)['errors'])
+        self.assertFalse(self.query()['items'])
+
+    def test_stale_selected_item_does_not_break_unrelated_subset(self):
+        first = self.candidate()
+        second = self.candidate('b')
+        display = self.call('display', invocation_id=self.inv['invocation_id'], management_ref='synthetic:user',
+                            items=[dict(first, operation='activate'), dict(second, operation='activate')])
+        confirmation = self.confirm(display)
+        self.decide(first, 'pause')
+        result = self.call('consume', **confirmation)
+        self.assertEqual(len(result['errors']), 1)
+        self.assertEqual(result['applied'], [m.key(second)])
+
+    def test_source_file_drift_and_scope_mismatch_are_local(self):
+        original = self.root.parent / 'original.txt'
+        original.write_text('source', encoding='utf-8')
+        eid = self.collect(artifacts=[{'path': str(original), 'sha256': m.file_sha(original)}])
+        ref = self.call('consolidate', invocation_id=self.inv['invocation_id'], candidates=[self.draft([eid])])['candidates'][0]
+        self.decide(ref)
+        self.assertFalse(self.call('query', context={'template': 'v2'})['items'])
+        self.assertEqual(self.registry()['records'][m.key(ref)]['status'], 'active')
+        original.write_text('source changed', encoding='utf-8')
+        self.assertFalse(self.query()['items'])
+
+    def test_rejected_needs_review_and_reauthorize_new_revision(self):
+        ref = self.candidate()
+        self.decide(ref, 'pause')
+        self.assertFalse(self.decide(ref, 'reject')['errors'])
+        self.assertEqual(self.registry()['records'][m.key(ref)]['status'], 'rejected')
+        self.assertFalse(self.decide(ref, 'reauthorize')['errors'])
+        sources = self.registry()['records'][m.key(ref)]['source_refs']
+        new = self.call('revise', invocation_id=self.inv['invocation_id'], previous=ref, management_ref='synthetic:explicit-reproposal', candidate=self.draft(sources))
+        self.assertEqual(new['revision'], 2)
+        self.assertFalse(self.decide(new)['errors'])
+        self.assertEqual(self.query()['items'][0]['revision'], 2)
+
+    def test_import_does_not_inherit_active_without_current_sources(self):
+        ref = self.candidate()
+        self.decide(ref)
+        path = self.root.parent / 'backup.json'
+        self.call('backup', path=str(path))
+        other = self.root.parent / 'restore-root'
+        m.execute({'action': 'init'}, other)
+        result = m.execute({'action': 'restore', 'path': str(path)}, other)
+        self.assertEqual(result['quarantined'], [m.key(ref)])
+        self.assertFalse(m.execute({'action': 'query', 'context': {'template': 'v1'}}, other)['items'])
+
+    def test_delete_keeps_other_item_approval_and_scrubs_verification_text(self):
+        a = self.collect('a')
+        b = self.collect('b')
+        first, second = self.call('consolidate', invocation_id=self.inv['invocation_id'], candidates=[
+            self.draft([a], verification={'status': 'verified', 'verifier': 'synthetic', 'independent': True,
+                                         'evidence_refs': ['synthetic:evidence'], 'notes': 'SYNTHETIC-PRIVATE-DELETE-ME'}), self.draft([b])])['candidates']
+        display = self.call('display', invocation_id=self.inv['invocation_id'], management_ref='synthetic:user',
+                            items=[dict(first, operation='activate'), dict(second, operation='activate')])
+        self.call('consume', **self.confirm(display))
+        self.collect('not-yet-consolidated')
+        self.decide(first, 'delete')
+        self.assertEqual([x['id'] for x in self.query()['items']], [second['id']])
+        for path in self.root.rglob('*'):
+            if path.is_file() and path.suffix in {'.md', '.json', '.jsonl'}:
+                self.assertNotIn('SYNTHETIC-PRIVATE-DELETE-ME', path.read_text(encoding='utf-8'))
+        self.assertEqual(self.call('consolidate', invocation_id=self.inv['invocation_id'])['new_events'], 1)
+
+    def test_use_preserves_long_term_approval(self):
+        ref = self.candidate()
+        self.decide(ref)
+        self.inv = self.begin('session-2')
+        self.decide(ref, 'use')
+        self.inv = self.begin('session-3')
+        self.assertEqual(len(self.query()['items']), 1)
+        self.assertEqual(self.registry()['records'][m.key(ref)]['memory_approval']['mode'], 'long_term')
+
+    def test_delete_preserves_unconsumed_batch_decision_for_other_item(self):
+        first = self.candidate('a')
+        second = self.candidate('b')
+        display = self.call('display', invocation_id=self.inv['invocation_id'], management_ref='synthetic:user',
+                            items=[dict(first, operation='activate'), dict(second, operation='activate')])
+        confirmation = self.confirm(display)
+        self.decide(first, 'delete')
+        result = self.call('consume', **confirmation)
+        self.assertEqual(result['applied'], [m.key(second)])
+        self.assertEqual(len(result['errors']), 1)
+
+    def test_broader_scope_cannot_bypass_revocation(self):
+        ref = self.candidate()
+        self.decide(ref)
+        self.decide(ref, 'revoke')
+        sources = self.registry()['records'][m.key(ref)]['source_refs']
+        with self.assertRaisesRegex(m.MemoryError, 'lineage'):
+            self.call('revise', invocation_id=self.inv['invocation_id'], previous=ref,
+                      management_ref='synthetic:scope-edit-without-reauthorization', candidate=self.draft(sources, scope={}))
+
+    def test_same_source_independent_existing_rule_survives_revoke(self):
+        eid = self.collect()
+        first, second = self.call('consolidate', invocation_id=self.inv['invocation_id'], candidates=[
+            self.draft([eid], id='a'), self.draft([eid], id='b')])['candidates']
+        self.decide(first)
+        self.decide(second)
+        self.decide(first, 'revoke')
+        self.assertEqual([x['id'] for x in self.query()['items']], ['b'])
+
+    def test_same_session_different_tasks_do_not_consume_each_other(self):
+        eid = self.collect('task-a')
+        second = self.call('begin', host='synthetic', native_session_id='session-1', task_id='task-b',
+                           explicit_use_ref='synthetic:new-task', materials_read={'refs': ['synthetic:task-b'], 'constraints': {'template': 'v2'}})
+        result = self.call('consolidate', invocation_id=second['invocation_id'])
+        self.assertEqual(result['new_events'], 0)
+        result = self.call('consolidate', invocation_id=self.inv['invocation_id'])
+        self.assertEqual(result['new_events'], 1)
+        record = self.registry()['records'][m.key(result['candidates'][0])]
+        self.assertEqual(record['scope'], {'template': 'v1'})
+
     def test_cross_process_same_session_collection(self):
         script = Path(m.__file__)
         requests = []

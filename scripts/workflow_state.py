@@ -388,6 +388,7 @@ def transact(path, request, memory_root=None):
         event(state, 'init', 'Initialized; no user approval implied')
     else:
         state = read_json(path)
+        require(isinstance(state, dict), 'State must be an object')
         if state.get('schema') == 1:
             validate_base(state, 1)
             # Check old artifacts before changing schema or writing any backup/state.

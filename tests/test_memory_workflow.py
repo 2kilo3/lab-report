@@ -179,7 +179,7 @@ class MemoryWorkflowTests(unittest.TestCase):
         w.validate(upgraded)
 
     def test_invalid_unknown_or_missing_legacy_cannot_be_migrated(self):
-        for state in ({'schema': 1, 'phase': 'done'}, {'schema': 999}):
+        for state in ({'schema': 1, 'phase': 'done'}, {'schema': 999}, ['invalid-state-object']):
             m.atomic(self.state, state)
             before = self.state.read_bytes()
             with self.assertRaises(w.GuardError):
@@ -193,6 +193,16 @@ class MemoryWorkflowTests(unittest.TestCase):
             self.files.receipt()
             self.call('record_review', path='review.json')
             self.assertEqual(self.call('finish')['phase'], 'done')
+
+    def test_new_material_scope_rechecks_existing_adoption(self):
+        self.adopt()
+        self.call('memory_begin', host='synthetic', native_session_id='report-session',
+                  explicit_use_ref='synthetic:changed-template',
+                  materials_read={'refs': ['synthetic:new-template'], 'constraints': {'template': 'v2'}})
+        state = self.call('status')
+        self.assertTrue(state['memory_impact_pending'])
+        with self.assertRaises(w.GuardError):
+            self.call('finish')
 
 
 if __name__ == '__main__':
