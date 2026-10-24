@@ -206,6 +206,11 @@ class Store:
         require(record['status'] in STATUSES and content_digest(record) == record['content_digest'], 'Content metadata drift')
         require(file_sha(self.body_path(record)) == record['body_sha256'], 'Immutable body drift')
 
+    def method_only(self, record):
+        body = self.body_path(record).read_text(encoding='utf-8')
+        forbidden = r'(跳过|免除|豁免).{0,12}(验收|人审|评分|权限)|忽略.{0,8}(系统指令|权限|评分)|更高优先级|override.{0,16}(system|permission)|skip.{0,12}(acceptance|approval)'
+        require(re.search(forbidden, body, re.IGNORECASE) is None, 'Experience cannot change authority or acceptance gates; host must also inspect semantics')
+
     def blocked(self, record):
         lineages = set(record['lineage'])
         return any(not t.get('reauthorized_by') and (t.get('id') == record['id'] or lineages.intersection(t.get('lineage', [])))
@@ -229,6 +234,7 @@ class Store:
         require(record['status'] == 'active' and self.registry['heads'].get(record['id']) == record['revision'],
                 'Revision is not active')
         require(record['kind'] != 'hypothesis', 'Hypothesis is not executable')
+        self.method_only(record)
         require(matches(record['scope'], context), 'Scope unknown/mismatch')
         approval = record['memory_approval']
         require(isinstance(approval, dict) and approval.get('content_digest') == record['content_digest'], 'No bound memory approval')
@@ -306,7 +312,8 @@ class Store:
         require(isinstance(payload, dict) and payload, 'Original business payload required')
         payload = {k: v for k, v in payload.items() if k not in {'received_at', 'retry_count', 'temp_path', 'adapter_summary'}}
         pd = sha(payload)
-        source.setdefault('revision', pd)
+        if not source.get('revision'):
+            source['revision'] = pd
         identity = {k: source[k] for k in ('provider', 'namespace', 'record_id', 'revision')}
         eid = sha({'protocol': 1, 'source': identity, 'event_type': request['event_type']})
         value = dict(event_id=eid, payload_digest=pd, source=identity, payload=payload,
@@ -502,6 +509,7 @@ class Store:
         inv = self.invocation(display['invocation_id'])
         shown = {key(x): x for x in display['items']}
         applied, errors = [], []
+        self.registry['confirmations'][cid]['consumed'] = True
         for decision in value['decisions']:
             item = shown[key(decision)]
             try:
@@ -514,7 +522,6 @@ class Store:
                 applied.append(key(record))
             except (ValueError, OSError, KeyError) as error:
                 errors.append({'item': key(item), 'error': str(error)})
-        self.registry['confirmations'][cid]['consumed'] = True
         self.propagate()
         return dict(applied=applied, errors=errors)
 
@@ -525,6 +532,7 @@ class Store:
         if op in {'activate', 'use', 'resume'}:
             require(status in {'candidate', 'needs_review', 'active'} and not self.blocked(r), 'Terminal/blocked revision cannot activate')
             require(r['kind'] != 'hypothesis', 'Hypothesis requires a new verified revision')
+            self.method_only(r)
             self.sources_ok(r)
             self.verified(r)
             require(matches(r['scope'], inv['materials_read']['constraints']), 'Approval scope mismatch')
@@ -708,8 +716,8 @@ def execute(request, root=None):
     if request.get('mode') == 'off':
         return {'mode': 'off', 'loaded': False}
     action = request.get('action')
-    if action == 'new_session_token':
-        return {'session_token': token('session')}
+    if action in {'new_session_token', 'new_event_token'}:
+        return {'session_token' if action == 'new_session_token' else 'event_token': token('session' if action == 'new_session_token' else 'event')}
     with Store(root, create=action in {'init', 'begin'}).transaction() as store:
         if 'expected_generation' in request:
             require(request['expected_generation'] == store.registry['generation'], 'Registry generation conflict')
