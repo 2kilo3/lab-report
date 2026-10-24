@@ -54,3 +54,33 @@ requirements、writing、final_file 必须 pass，不可标不适用；其余条
 例：确认请求为 `{"action":"confirm","message_ref":"实际确认消息的可定位引用"}`。状态工具不会查询或验证该消息，调用者必须先检查用户确实确认了当前意图，示例不能作为授权。
 
 测试命令：`python -B -m unittest discover -s tests -p 'test_workflow_state.py' -v`。这些是合成状态逻辑测试，不是课程实验、文档排版或多 Agent 质量证明。
+
+## 2.1 的 schema 2 与经验接线
+
+功能版本为 2.1.0，任务 schema 为 2，经验 registry 自有 schema 1，三者分别管理。`basis()` 仍只含 sources、intention、draft、evidence。state.events 是任务动作日志，collection_events 是私有根采集日志；state.approval 是意图确认，memory_approval 是经验批准。
+
+新增 task_id、session_ref、invocation_id、memory_mode、lessons_used、lessons_receipt、adoption_generation、memory_impact_pending、lessons_history、memory_checkpoint。新建及旧任务升级默认 memory_mode=off、空采用清单、代数 0；关闭且无依赖不访问根。开启是可选的显式设置，不改变原动作的确认/独审要求。任务仍只允许一个编排者写。
+
+旧 schema 1 先按旧规则验证并检查实际文件，再在内存补默认字段、验证 schema 2 后原子提交；旁存原始 `state.json.schema1.bak`，不覆盖已有备份。合法且工件未变的旧 done 保持 done，原确认、artifact basis 与独审收据不改写。坏状态、未知 schema、缺失文件不会通过补字段洗白。迁移入口是 migrate，也可在原动作读取时升级；显式使用 migrate 便于先检查备份。旧脚本会拒绝 schema 2；升级后只用新写者，备份恢复只在停止写入并确认没有新进度时进行，不混用脚本或倒改 schema。
+
+调用时可用 `--memory-root` 指定测试根；通常由 LAB_REPORT_MEMORY_HOME/平台默认定位。根在一次入口内固定。[经验协议](memory.md) 说明字段、审批、失效、删除和恢复。
+
+| 新动作 | 请求及守门 |
+| --- | --- |
+| memory_mode | mode 为 on/off；off 保留采用历史和代数，不能解除实际依赖 |
+| memory_begin | mode=on；先读材料，再提交 host、native_session_id/session_token、explicit_use_ref、materials_read:{refs,constraints}；任务 ID 取 state；resume 时带原 invocation_id |
+| memory_checkpoint | status 为 saved/unavailable/disabled，source_ref 为最小恢复指针；不复制长期正文 |
+| adopt_lesson | 已确认意图，produce/review/done；lesson:{id,revision}，application:{action,affected:[对象或页面]}。先查权威根，再登记待操作依赖，返回 application_id |
+| record_application | application_id、真实 result（不可为 pending）；补记外部工具实际结果。存在 pending 应用不能独审交付 |
+| refresh_lessons | 在线重查实际依赖并刷新收据；不等于重新人审 |
+| acknowledge_memory_recovery | reason；在线核查恢复后的同一已批准内容，清影响标记，仍须当前代数独审；用户暂停需先在经验根明确 resume |
+| detach_lessons | 明确 lessons:[{id,revision}] 与独立局部复核 JSON path；绑定当前 basis、原 lessons_basis、目标 applications_digest、reviewer/context_ref、verdict=pass、reason 和 revalidated_from_current_materials:true |
+| migrate | 验证、备份并单向升级；不伪造新审核 |
+
+每次 status/原动作先 reconcile 文件并在线 check_used 已采用经验；record_review 和 finish 同样执行，不能凭上次收据离线放行。stdout 保留原字段，新增身份、lessons_basis、adoption_generation、lessons_used、lessons_receipt 与影响清单。lessons_receipt 含 task/root/basis、所查依赖状态版本、时间、结果与自身摘要；在线重查未变可重建收据，时间变化不导致独审失效。
+
+独审 JSON 增加 lessons_basis（status 返回的字符串），记录实际读过的采用清单。只有空清单且 adoption_generation=0 可接受不含此字段的旧收据；经历采用再解除的空清单仍需新格式。新增应用、补记结果、替换/解除依赖、首次发现失效均递增代数并清旧审核；重复同一未解决失效不递增。核查时间和无关库更新不进摘要，纯方法变动保留意图确认。
+
+相关经验被撤销/替代、来源漂移、错根或不可读时，记录影响并使旧审核失效；已 done 的后续失效另记 after_delivery，不改历史交付文件。关闭后仍有依赖必须检查。库离线时可按当前原材料修订/复核受影响部分，再用 detach_lessons 消费绑定当前成果的独立复核记录、移除实际依赖并重新独审；不能以切开关冒充无记忆完成。
+
+finish 从权威根同一 OS 互斥的短临界区内复查依赖、重读原独审收据并原子写 done。撤销先提交则不放行；done 先提交则之后撤销在下一受控入口识别。这只串行化规定入口，不拦截同权限绕过入口的文件改写，也不保证外部工具操作期间持续实时有效。
