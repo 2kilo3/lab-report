@@ -52,8 +52,19 @@ def build(output):
         for mode in ('off', 'on'):
             target = output / ('synthetic-memory-' + mode + '.docx')
             shutil.copyfile(template, target)
+            app_id = None
             if mode == 'on':
-                scenario.adopt()
+                ref = scenario.protocol.candidate('synthetic-caption-check', kind='template_risk',
+                    sections=dict(zip(m.BODY_FIELDS, ['Synthetic template v1', 'Caption alignment differs',
+                        'Center only the caption paragraph; preserve shared styles, cover, score table and sections',
+                        'To be checked in this synthetic fixture', 'Synthetic current DOCX and page rendering',
+                        'Compare protected XML, metadata and actual rendered pages', 'Other templates need current checks'])))
+                scenario.protocol.decide(ref)
+                scenario.call('rollback', to='produce', reason='Register actual synthetic DOCX fixture')
+                scenario.call('submit_draft', paths=[str(target)], evidence=[])
+                state = scenario.call('adopt_lesson', lesson=ref,
+                    application={'action': 'Center caption paragraph only', 'affected': [str(target) + ':caption']})
+                app_id = state['lessons_used'][-1]['applications'][-1]['application_id']
             current = Document(target)
             caption = next(p for p in current.paragraphs if p.text.startswith('Figure 1.'))
             caption.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -64,6 +75,9 @@ def build(output):
             assert protected(reopened) == baseline, 'Protected cover/table/sections drifted'
             assert reopened.core_properties.author == AUTHOR
             assert reopened.core_properties.last_modified_by == AUTHOR
+            if app_id:
+                scenario.call('status')
+                scenario.call('record_application', application_id=app_id, result='Actual synthetic DOCX saved and structural/metadata checks passed; visual check pending')
             records.append(dict(mode=mode, file=target.name, protected_xml_unchanged=True,
                                 author=reopened.core_properties.author,
                                 last_modified_by=reopened.core_properties.last_modified_by,

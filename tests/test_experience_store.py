@@ -260,6 +260,7 @@ class MemoryTests(unittest.TestCase):
         self.assertEqual(self.registry()['records'][m.key(ref)]['status'], 'active')
         original.write_text('source changed', encoding='utf-8')
         self.assertFalse(self.query()['items'])
+        self.assertEqual(self.registry()['records'][m.key(ref)]['status'], 'needs_review')
 
     def test_rejected_needs_review_and_reauthorize_new_revision(self):
         ref = self.candidate()

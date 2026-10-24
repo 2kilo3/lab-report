@@ -233,6 +233,18 @@ class Store:
             visit(k, set())
 
     def check(self, ref, context, invocation_id=None, stack=None):
+        try:
+            return self._check(ref, context, invocation_id, stack)
+        except (ValueError, OSError, KeyError) as error:
+            record = self.registry['records'].get(key(ref))
+            if record and record.get('status') == 'active' and str(error) not in {
+                    'Scope unknown/mismatch', 'Approval limited to another invocation'}:
+                record.update(status='needs_review', pause_reason='automatic: ' + str(error),
+                              state_version=record['state_version'] + 1)
+                self.registry['history'].append(dict(action='needs_review', item=key(ref), at=now(), reason=str(error)))
+            raise
+
+    def _check(self, ref, context, invocation_id=None, stack=None):
         record = self.get(ref)
         self.intact(record)
         require(not self.blocked(record), 'Rejected/revoked lineage')

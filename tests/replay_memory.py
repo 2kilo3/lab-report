@@ -15,13 +15,14 @@ def replay(output):
     try:
         p = scenario.protocol
         trace = []
+        ref = p.candidate('replay-next-use', id='replay-method')
         r = p.registry()
-        candidate = r['records'][m.key(scenario.ref)]
+        candidate = r['records'][m.key(ref)]
+        candidate_visible = any(x['id'] == ref['id'] for x in p.query()['items'])
+        assert not candidate_visible and candidate['status'] == 'candidate'
         trace.append({'step': '1 input event and candidate recap', 'source_events': list(r['sources'].values()),
                       'candidate': candidate, 'recaps': [x.read_text(encoding='utf-8') for x in (p.root / 'sessions').glob('*/recap-*.md')]})
-        # The first sample was explicitly managed in setup. Add a fresh, unapproved sample
-        # to demonstrate the ordinary next-use path with a new session and task material read.
-        ref = p.candidate('replay-next-use', id='replay-method')
+        # Setup's separate fixture is not this replayed candidate.
         p.inv = p.begin('replay-next-explicit-session')
         display = p.display(ref, management=False)
         confirmation = p.confirm(display)
@@ -59,8 +60,8 @@ def replay(output):
         trace.append({'step': '6 local current-material revalidation then fresh review',
                       'phase': final['phase'], 'generation': final['adoption_generation'], 'history': final['lessons_history']})
         result = dict(label='SYNTHETIC HOST AND USER CONFIRMATION; NOT A REAL REPORT', trace=trace,
-                      metrics={'wrong_candidate_adoptions': 0, 'revocation_delivery_bypasses': 0,
-                               'stale_review_reuses': 0, 'elapsed_seconds': round(time.monotonic() - start, 3),
+                      metrics={'wrong_candidate_adoptions': int(candidate_visible), 'revocation_delivery_bypasses': int(not denied),
+                               'stale_review_reuses': int(not denied), 'elapsed_seconds': round(time.monotonic() - start, 3),
                                'evidence_omissions_real_report': None, 'template_drift_real_report': None,
                                'page_errors_real_report': None, 'rework_real_report': None,
                                'human_review_seconds': None, 'model_cost': None, 'efficiency_gain': None})

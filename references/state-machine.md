@@ -79,6 +79,8 @@ requirements、writing、final_file 必须 pass，不可标不适用；其余条
 
 每次 status/原动作先 reconcile 文件并在线 check_used 已采用经验；record_review 和 finish 同样执行，不能凭上次收据离线放行。stdout 保留原字段，新增身份、lessons_basis、adoption_generation、lessons_used、lessons_receipt 与影响清单。lessons_receipt 含 task/root/basis、所查依赖状态版本、时间、结果与自身摘要；在线重查未变可重建收据，时间变化不导致独审失效。
 
+外部编辑改变了已登记候选时，先 status 消费实际工件漂移并核对影响，再 record_application 补记结果；原来的文件漂移守门继续有效，不用手改摘要绕过。
+
 独审 JSON 增加 lessons_basis（status 返回的字符串），记录实际读过的采用清单。只有空清单且 adoption_generation=0 可接受不含此字段的旧收据；经历采用再解除的空清单仍需新格式。新增应用、补记结果、替换/解除依赖、首次发现失效均递增代数并清旧审核；重复同一未解决失效不递增。核查时间和无关库更新不进摘要，纯方法变动保留意图确认。
 
 相关经验被撤销/替代、来源漂移、错根或不可读时，记录影响并使旧审核失效；已 done 的后续失效另记 after_delivery，不改历史交付文件。关闭后仍有依赖必须检查。库离线时可按当前原材料修订/复核受影响部分，再用 detach_lessons 消费绑定当前成果的独立复核记录、移除实际依赖并重新独审；不能以切开关冒充无记忆完成。
