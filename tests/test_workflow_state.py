@@ -46,6 +46,149 @@ class WorkflowTests(unittest.TestCase):
         self.call('record_review', path='review.json')
         return self.call('finish')
 
+    def confirmed(self):
+        self.call('submit_intention', path='意图.md')
+        return self.call('confirm', message_ref='synthetic-test-only:user-confirmation')
+
+    def plan_step(self, step_id='S1', screenshot=True, **overrides):
+        step = dict(id=step_id, source='synthetic guide section', goal='synthetic step goal',
+                    modality='gui', action='synthetic visible action', screenshot_required=screenshot,
+                    must_include=['filename visible'] if screenshot else [],
+                    forbidden_shortcuts=['synthetic CLI substitution'], verify='filename visible',
+                    on_fail='retry_once', evidence_ids=['E1'])
+        step.update(overrides)
+        return step
+
+    def write_plan(self, steps=None, frozen=True, name='steps.json', goal='synthetic step goal'):
+        value = {'version': '1.0', 'frozen': frozen,
+                 'steps': steps if steps is not None else [self.plan_step(goal=goal)]}
+        (self.root / name).write_text(json.dumps(value, ensure_ascii=False), encoding='utf-8')
+        return name
+
+    def freeze(self, name='steps.json', **kwargs):
+        return self.call('freeze_plan', path=name,
+                         message_ref='synthetic-test-only:card-confirmation', **kwargs)
+
+    def complete(self, step_id='S1', evidence=None, marks=None):
+        request = dict(id=step_id, evidence=['screen.png'] if evidence is None else evidence)
+        if marks is not None:
+            request['must_include'] = marks
+        return self.call('complete_step', **request)
+
+    def test_execution_card_must_be_approved_and_frozen(self):
+        self.write_plan(frozen=False)
+        with self.assertRaises(w.GuardError):
+            self.freeze()  # intention is not confirmed yet
+        self.confirmed()
+        with self.assertRaises(w.GuardError):
+            self.freeze()
+        self.write_plan(frozen=True)
+        with self.assertRaises(w.GuardError):
+            self.call('freeze_plan', path='steps.json')
+        state = self.freeze()
+        self.assertTrue(state['plan']['frozen'])
+        self.assertEqual(state['plan']['steps'][0]['id'], 'S1')
+
+    def test_complete_step_requires_frozen_card(self):
+        self.confirmed()
+        with self.assertRaises(w.GuardError):
+            self.complete()
+        self.write_plan()
+        self.freeze()
+        with self.assertRaises(w.GuardError):
+            self.complete(step_id='S9')
+        with self.assertRaises(w.GuardError):
+            self.complete(evidence=[])
+        with self.assertRaises(w.GuardError):
+            self.complete(evidence=['source.txt'])
+        (self.root / 'empty.png').write_bytes(b'')
+        with self.assertRaises(w.GuardError):
+            self.complete(evidence=['empty.png'])
+        with self.assertRaises(w.GuardError):
+            self.complete(marks={})
+        with self.assertRaises(w.GuardError):
+            self.complete(marks={'filename visible': 'unknown'})
+        state = self.complete(marks={'filename visible': 'pass'})
+        self.assertIn('S1', state['step_records'])
+        with self.assertRaises(w.GuardError):
+            self.complete(marks={'filename visible': 'pass'})
+
+    def test_bind_and_submit_wait_for_all_steps(self):
+        self.write_plan([self.plan_step('S1'), self.plan_step('S2', must_include=['output visible'])])
+        self.confirmed()
+        self.freeze()
+        with self.assertRaises(w.GuardError):
+            self.call('bind_evidence')
+        self.complete('S1', marks={'filename visible': 'pass'})
+        with self.assertRaises(w.GuardError):
+            self.call('bind_evidence')
+        with self.assertRaises(w.GuardError):
+            self.call('submit_draft', paths=['report.docx'], evidence=['screen.png'])
+        self.complete('S2', marks={'output visible': 'pass'})
+        with self.assertRaises(w.GuardError):
+            self.call('submit_draft', paths=['report.docx'], evidence=['screen.png'])
+        self.call('bind_evidence')
+        state = self.call('submit_draft', paths=['report.docx'], evidence=['screen.png'])
+        self.assertEqual(state['phase'], 'review')
+
+    def test_non_screenshot_step_can_omit_must_include(self):
+        step = self.plan_step('S1', screenshot=False)
+        del step['must_include']
+        self.write_plan([step])
+        self.confirmed()
+        self.freeze()
+        state = self.complete('S1', evidence=['source.txt'])
+        self.assertEqual(state['step_records']['S1']['must_include'], {})
+        self.call('bind_evidence')
+
+    def test_frozen_plan_flow_reaches_done_with_fresh_review(self):
+        self.write_plan()
+        self.confirmed()
+        self.freeze()
+        self.complete(marks={'filename visible': 'pass'})
+        self.call('bind_evidence')
+        self.call('submit_draft', paths=['report.docx'], evidence=['screen.png'])
+        self.receipt()
+        self.call('record_review', path='review.json')
+        self.assertEqual(self.call('finish')['phase'], 'done')
+
+    def test_new_intention_invalidates_frozen_card(self):
+        self.write_plan()
+        self.confirmed()
+        self.freeze()
+        self.complete(marks={'filename visible': 'pass'})
+        self.call('rollback', to='intake', reason='User changed the task scope')
+        (self.root / '意图.md').write_text('new synthetic scope', encoding='utf-8')
+        self.call('status')
+        self.call('submit_intention', path='意图.md')
+        self.call('confirm', message_ref='synthetic-test-only:new-confirmation')
+        with self.assertRaises(w.GuardError):
+            self.call('submit_draft', paths=['report.docx'], evidence=['screen.png'])
+        with self.assertRaises(w.GuardError):
+            self.freeze()
+        state = self.freeze(reason='Rebuilt card for the newly confirmed scope')
+        self.assertEqual(state['step_records'], {})
+        self.assertFalse(state['plan_invalidated'])
+
+    def test_changed_plan_needs_reason_and_restarts_steps(self):
+        self.write_plan()
+        self.confirmed()
+        self.freeze()
+        self.complete(marks={'filename visible': 'pass'})
+        self.write_plan(goal='changed synthetic step goal')
+        state = self.call('status')
+        self.assertIsNone(state['plan'])
+        self.assertEqual(state['phase'], 'produce')
+        with self.assertRaises(w.GuardError):
+            self.freeze()
+        state = self.freeze(reason='Guide wording clarified; recapture affected step')
+        self.assertEqual(state['step_records'], {})
+        self.assertFalse(state['plan_invalidated'])
+        with self.assertRaises(w.GuardError):
+            self.freeze()
+        state = self.freeze(reason='second re-freeze applied')
+        self.assertEqual(state['step_records'], {})
+
     def test_requires_actual_confirmation_reference(self):
         self.call('submit_intention', path='意图.md')
         for request in ({'action': 'confirm'}, {'action': 'submit_draft', 'paths': ['report.docx']},
