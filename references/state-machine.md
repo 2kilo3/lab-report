@@ -20,6 +20,24 @@
 - resume：reason 写解除阻塞/修复依据；先查实际文件，不允许跳过来源影响评估。
 - set_sources：paths（新的完整原始材料路径数组）、reason。登记新增或调整来源清单，清除审核并进入待评估 blocked。
 - reassess：requirements_changed（布尔值）、reason（原始材料变更的影响依据）。仅检测到来源/清单变化后使用。若需求变化回 intake 并撤销确认；若已确认意图未改变回 produce，保留原用户确认但必须重新独审。不会要求无关内容重做。
+- freeze_plan：path（执行卡 JSON）、message_ref（真实用户确认引用）、reason（改卡/重冻结必填）。仅 produce 且意图已确认；卡本身必须 `frozen: true`，步骤须含 id、source、goal、modality、action、screenshot_required、must_include、forbidden_shortcuts、verify、on_fail。登记卡路径与摘要，清除旧步骤记录和证据绑定。
+- complete_step：id、evidence（真实证据路径数组，非空）、must_include（对象，逐项标 `pass` 或 `{"status":"pass"}`）。仅已冻结执行卡、produce 可用；缺证据、空文件、截图步无图片、漏项或未通过均拒绝；同一 id 不能重复完成。
+- bind_evidence：无附加字段。所有步骤完成且证据仍匹配后才能封存；摘要绑定当前卡与逐步验收结果，`submit_draft` 据此放行。
+
+## 执行卡逐步证据门
+
+登记执行卡时，状态新增 `plan`、`step_records`、`evidence_binder`、`plan_invalidated`。旧任务默认 `None / {} / None / false`，原有意图→成稿→独审流程不变；未登记执行卡的任务（如纯审查）不经过逐步门。状态文件中的 `plan.steps` 是 `freeze_plan` 时从卡文件规范化后的副本，卡文件本身才是权威来源。
+
+| 动作 | 前置 | 拒绝条件 |
+| --- | --- | --- |
+| freeze_plan | 意图已确认，phase=produce | 卡未标 `frozen: true`；缺 message_ref；步骤结构非法或缺 forbidden_shortcuts；已存在卡/卡被外部改动/意图变化而重冻结缺 reason |
+| complete_step | 已冻结执行卡，phase=produce | 未冻结；步骤未知或已完成；证据缺失/为空/0 字节；`screenshot_required` 步无图片证据；must_include 未逐项通过 |
+| bind_evidence | 所有步骤已完成 | 仍有未完成步骤；证据文件缺失或摘要不符 |
+| submit_draft | 登记过执行卡时 | 卡未冻结；步骤未全完成；证据绑定缺失或与当前卡/步骤不符 |
+
+`status` 额外返回 `plan_frozen`、`steps_completed`、`evidence_binder_ok`，恢复时先看实际卡与证据，不只看这些布尔值。卡文件被外部修改时，`status` 清除旧 plan、步骤记录和证据绑定并标 `plan_invalidated`，回到 produce；再次 `freeze_plan` 必须写 reason。卡同时绑定冻结时的意图摘要；意图变化会使卡失效，必须重新确认并冻结。某步证据文件变化时，该步记录和证据绑定失效，需重新采集并 `complete_step`。不要手改状态 JSON 绕过。
+
+脚本只检查文件存在、大小、图片扩展名、摘要和结构化验收结果；它不能判断截图内容是否可读、是否为空白、操作是否真的发生，也不能证明 GUI/CLI 模态没有冒充。这些仍由执行者按 [Step Card 与冻结](step-cards.md) 和 [禁止捷径目录](forbidden-shortcuts.md) 核对，并由独立审查复核。
 
 ## 独审收据 JSON
 
@@ -47,9 +65,10 @@ requirements、writing、final_file 必须 pass，不可标不适用；其余条
 
 1. 建工作目录，将各次 action JSON 保存在其中。init → submit_intention。
 2. 用户确认实际意图后，confirm 填真实对话引用，开始授权范围内工作。
-3. submit_draft 登记候选和证据。status 的 basis 交独审；独审检查原材料、意图与成稿后写收据。
-4. record_review → finish。失败则按具体问题 rollback、修复、重新审查。不修改 JSON 强推状态。
-5. 中断恢复先 status；缺 Python 时沿本文件同样的状态和守门条件手工记录，明确未使用可执行校验器。
+3. 有实验执行时，先 freeze_plan 登记已确认执行卡，再逐步 complete_step；全部完成且证据匹配后 bind_evidence。未登记执行卡的任务跳过此门。
+4. submit_draft 登记候选和证据。status 的 basis 交独审；独审检查原材料、意图、执行卡、逐步证据与成稿后写收据。
+5. record_review → finish。失败则按具体问题 rollback、修复、重新审查。不修改 JSON 强推状态。
+6. 中断恢复先 status；缺 Python 时沿本文件同样的状态和守门条件手工记录，明确未使用可执行校验器。
 
 例：确认请求为 `{"action":"confirm","message_ref":"实际确认消息的可定位引用"}`。状态工具不会查询或验证该消息，调用者必须先检查用户确实确认了当前意图，示例不能作为授权。
 

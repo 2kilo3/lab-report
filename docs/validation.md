@@ -43,6 +43,17 @@
 
 初次渲染因 LibreOffice 不在 PATH 失败，定位后仅为该子进程补已安装程序目录并重跑成功；没有安装应用或更改全局配置。Skill 校验器初次按系统 GBK 解码失败，明确以 `-X utf8` 重跑成功，没有改系统区域。开发中的失败用例先修实现再复跑，未删原断言、放宽门槛或伪填 not_applicable。
 
+## 2.1.0 执行卡与仿人证据增量验证
+
+日期：2026-11-02，Windows，Python 3.12.10，分支 `feat/human-ops-shortcuts`（基于 main `0fb02b9`）。
+
+- 新增 `references/human-ops.md`、`forbidden-shortcuts.md`、`step-cards.md`，并把 `SKILL.md`/`execution.md` 的截图措辞收紧为冻结卡必截点；未拆分为多个 Skill，写作/模板/独审链路未改。
+- 状态辅助器新增 `freeze_plan`/`complete_step`/`bind_evidence` 与 `plan_frozen`/`evidence_binder` 门；旧 schema 2 状态缺省字段按 `plan=None`、`step_records={}`、`evidence_binder=None`、`plan_invalidated=false` 兼容，未改变意图→成稿→独审主流程。
+- 运行 `python -B -m unittest discover -s tests -p "test_*.py"`：66 项通过（含新增执行卡冻结、逐步证据、重冻结、意图变化失效用例）。静态检查：Python AST/编译、`git diff --check`、Markdown 本地链接均通过。
+- `tests/scenarios.md` 新增 51–56 为待执行行为设计（NOT EXECUTED），覆盖 CLI 冒充 GUI、合并必截点、脚本改配置、未冻结卡与空白截图。没有在真实课程实验或宿主 GUI 中执行这些场景。
+
+脚本只核对结构、文件存在、大小、图片扩展名和摘要；不能判定截图内容是否空白、窗口是否真实、模态是否被冒充，也不证明用户确认引用真实或独审独立。
+
 ## 风险与可执行测试对应
 
 | 风险 | 自动化覆盖 |

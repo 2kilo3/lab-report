@@ -59,6 +59,8 @@ git clone https://github.com/2kilo3/lab-report.git
 
 最小状态辅助器记录确认、当前成果版本、独审结果与局部回退，恢复时检查文件变化。它不替用户批准、不执行实验，也不能证明独审质量或防止同权限篡改。用法见 [状态与恢复](references/state-machine.md)。
 
+涉及实验执行时，已确认意图先落成可逐步验收的执行卡（Step Card），经用户确认冻结后按卡执行；截图以冻结卡中 `screenshot_required` 的必截点为集合，不合并、不跳过中间验收点，发现更优解先改卡并重新冻结。GUI 与 CLI 证据不可互相冒充，后台哈希/命令只作核验。原则见 [仿人实验操作](references/human-ops.md)，具体模式见 [禁止捷径目录](references/forbidden-shortcuts.md)，字段与冻结流程见 [Step Card 与冻结](references/step-cards.md)。未登记执行卡的审查或纯文档任务保持原流程。
+
 ### 3. 可选开启受监督经验
 
 2.1.0 增加一套可关闭的经验层：本轮在纠正、决策、失败修复和阶段检查点增量保存回顾与待审候选，收尾只落盘；下一次你明确使用 `lab-report` 时，先读当前材料，再把相关经验审核与本轮意图确认放在一次交互中。自动保存不等于自动生效，未变化的长期批准不重复询问。经验辅助取证、写作与允许区域的排版方法，原模板保护、真实证据、独审、最终页面和作者元数据回读继续执行。
@@ -111,6 +113,9 @@ references/
   academic-writing.md       自然表达与学术事实复核
   portability.md            依赖、平台差异与降级
   execution.md              实验取证、保存与恢复
+  human-ops.md              仿人操作硬原则、模态与后台工具边界
+  forbidden-shortcuts.md    按类别的禁止捷径目录
+  step-cards.md             执行卡字段、冻结、逐步证据与示例
   document-output.md        图文、模板与元数据
   requirements-note.md      可溯源意图清单写法
   state-machine.md           状态、确认与局部恢复

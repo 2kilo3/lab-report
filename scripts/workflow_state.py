@@ -25,6 +25,8 @@ _memory_spec.loader.exec_module(memory)
 
 PHASES = {'intake', 'awaiting_confirmation', 'produce', 'review', 'done', 'failed', 'blocked'}
 CHECKS = {'requirements', 'evidence', 'writing', 'format', 'render', 'final_file'}
+MODALITIES = {'gui', 'cli', 'mixed', 'manual'}
+IMAGE_SUFFIXES = {'.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.tif', '.tiff'}
 
 
 class GuardError(ValueError):
@@ -111,6 +113,120 @@ def validate_base(state, schema):
         require(nonempty(state.get('waiting_reason')) and state.get('resume_phase') in PHASES - {'blocked', 'failed'}, 'Invalid paused state')
 
 
+def valid_artifact(item):
+    return (isinstance(item, dict) and nonempty(item.get('path')) and isinstance(item.get('sha256'), str)
+            and len(item['sha256']) == 64 and all(c in '0123456789abcdef' for c in item['sha256']))
+
+
+def plan_defaults(state):
+    """Additive execution-card fields; old states keep their intent/draft/review flow."""
+    state.setdefault('plan', None)
+    state.setdefault('step_records', {})
+    state.setdefault('evidence_binder', None)
+    state.setdefault('plan_invalidated', False)
+
+
+def normalize_plan(value):
+    require(isinstance(value, dict) and value.get('frozen') is True,
+            'Plan must be a JSON object marked frozen after user confirmation')
+    raw_steps = value.get('steps')
+    require(isinstance(raw_steps, list) and raw_steps, 'Plan needs a non-empty steps list')
+    steps = []
+    seen = set()
+    for raw in raw_steps:
+        require(isinstance(raw, dict), 'Invalid plan step')
+        step_id = raw.get('id')
+        require(nonempty(step_id) and step_id not in seen, 'Step id must be unique and nonempty')
+        seen.add(step_id)
+        for key in ('source', 'goal', 'action', 'verify', 'on_fail'):
+            require(nonempty(raw.get(key)), 'Step ' + step_id + ' needs ' + key)
+        require(raw.get('modality') in MODALITIES, 'Step ' + step_id + ' has invalid modality')
+        require(isinstance(raw.get('screenshot_required'), bool), 'Step ' + step_id + ' needs boolean screenshot_required')
+        must = raw.get('must_include', [])
+        require(isinstance(must, list) and all(nonempty(x) for x in must), 'Step ' + step_id + ' needs string must_include')
+        require(len(set(must)) == len(must), 'Step ' + step_id + ' has duplicate must_include')
+        if raw['screenshot_required']:
+            require(bool(must), 'Screenshot-required step ' + step_id + ' needs must_include')
+        forbidden = raw.get('forbidden_shortcuts')
+        require(isinstance(forbidden, list) and forbidden and all(nonempty(x) for x in forbidden),
+                'Step ' + step_id + ' needs concrete forbidden_shortcuts')
+        evidence_ids = raw.get('evidence_ids', [])
+        require(isinstance(evidence_ids, list) and all(nonempty(x) for x in evidence_ids),
+                'Step ' + step_id + ' has invalid evidence_ids')
+        steps.append({'id': step_id, 'source': raw['source'], 'goal': raw['goal'],
+                      'modality': raw['modality'], 'action': raw['action'],
+                      'screenshot_required': raw['screenshot_required'], 'must_include': must,
+                      'forbidden_shortcuts': forbidden, 'verify': raw['verify'],
+                      'on_fail': raw['on_fail'], 'evidence_ids': evidence_ids})
+    return steps
+
+
+def binder_payload(state):
+    plan = state['plan']
+    require(plan is not None, 'No frozen plan')
+    steps = {}
+    for step in plan['steps']:
+        record = state['step_records'].get(step['id'])
+        require(record is not None, 'Missing completed step: ' + step['id'])
+        steps[step['id']] = {
+            'modality': step['modality'],
+            'screenshot_required': step['screenshot_required'],
+            'must_include': record['must_include'],
+            'evidence': [{'path': item['path'], 'sha256': item['sha256']} for item in record['evidence']],
+        }
+    return {'plan_sha256': plan['sha256'], 'steps': steps}
+
+
+def plan_ready_for_submit(state):
+    plan = state['plan']
+    if plan is None:
+        return True
+    require(plan.get('frozen') is True, 'Freeze the execution card before writing')
+    missing = [step['id'] for step in plan['steps'] if step['id'] not in state['step_records']]
+    require(not missing, 'Complete all execution-card steps before writing: ' + ', '.join(missing))
+    binder = state['evidence_binder']
+    require(isinstance(binder, dict) and binder.get('status') == 'ok'
+            and binder.get('plan_sha256') == plan['sha256']
+            and binder.get('summary_sha256') == memory.sha(binder_payload(state)),
+            'Bind current step evidence before writing')
+    return True
+
+
+def validate_plan_state(state):
+    require(isinstance(state.get('step_records'), dict), 'Invalid step records')
+    require(isinstance(state.get('plan_invalidated'), bool), 'Invalid plan invalidation marker')
+    binder = state.get('evidence_binder')
+    require(binder is None or isinstance(binder, dict), 'Invalid evidence binder')
+    plan = state.get('plan')
+    if plan is None:
+        require(not state['step_records'] and binder is None, 'Step progress without a frozen plan')
+        if state['phase'] in {'review', 'done'}:
+            require(not state['plan_invalidated'], 'Refreeze the changed execution card before writing')
+        return
+    require(state['plan_invalidated'] is False, 'Refreeze the changed execution card before continuing')
+    require(isinstance(plan, dict) and nonempty(plan.get('path')) and isinstance(plan.get('sha256'), str)
+            and len(plan['sha256']) == 64 and plan.get('frozen') is True and nonempty(plan.get('message_ref'))
+            and plan.get('intention_sha256') == (state.get('intention') or {}).get('sha256')
+            and isinstance(plan.get('steps'), list) and plan['steps'], 'Invalid frozen plan record')
+    ids = [step.get('id') for step in plan['steps']]
+    require(all(nonempty(step_id) for step_id in ids) and len(set(ids)) == len(ids), 'Invalid plan step ids')
+    for step in plan['steps']:
+        require(isinstance(step, dict) and step.get('modality') in MODALITIES
+                and isinstance(step.get('screenshot_required'), bool)
+                and isinstance(step.get('must_include'), list)
+                and isinstance(step.get('forbidden_shortcuts'), list), 'Invalid plan step')
+    for step_id, record in state['step_records'].items():
+        require(step_id in ids and isinstance(record, dict) and isinstance(record.get('evidence'), list)
+                and record['evidence'] and all(valid_artifact(item) for item in record['evidence'])
+                and isinstance(record.get('must_include'), dict), 'Invalid completed step record')
+    if binder is not None:
+        require(binder.get('status') == 'ok' and binder.get('plan_sha256') == plan['sha256']
+                and binder.get('summary_sha256') == memory.sha(binder_payload(state)),
+                'Evidence binder does not match current plan/steps')
+    if state['phase'] in {'review', 'done'}:
+        plan_ready_for_submit(state)
+
+
 def lessons_basis(state):
     return memory.sha({'used': state['lessons_used'], 'adoption_generation': state['adoption_generation']})
 
@@ -136,6 +252,7 @@ def validate(state):
     if state['phase'] == 'done':
         require(not state['memory_impact_pending'], 'Unresolved memory impact')
         require(review_lessons_match(state['review'], state), 'No review for current memory adoption')
+    validate_plan_state(state)
 
 
 def memory_defaults(state):
@@ -196,6 +313,17 @@ def reconcile(state):
             if current != item['sha256']:
                 changed.append(key)
                 item['sha256'] = current
+    plan = state.get('plan')
+    if plan:
+        intention_sha = state['intention']['sha256'] if state['intention'] else None
+        if digest(Path(plan['path'])) != plan['sha256'] or plan.get('intention_sha256') != intention_sha:
+            state.update(plan=None, step_records={}, evidence_binder=None, plan_invalidated=True)
+            changed.append('plan')
+    for step_id, record in list(state.get('step_records', {}).items()):
+        if any(digest(Path(item['path'])) != item['sha256'] for item in record['evidence']):
+            del state['step_records'][step_id]
+            state['evidence_binder'] = None
+            changed.append('step_evidence')
     if changed:
         state['review'] = None
         if 'intention' in changed:
@@ -203,6 +331,9 @@ def reconcile(state):
         if 'sources' in changed or state['impact_pending']:
             state.update(phase='blocked', resume_phase='produce' if approved(state) else 'awaiting_confirmation',
                          waiting_reason='Source files changed; assess impact before proceeding', impact_pending=True)
+        elif 'plan' in changed or 'step_evidence' in changed:
+            state.update(phase='produce' if approved(state) else 'awaiting_confirmation',
+                         waiting_reason=None, resume_phase=None)
         else:
             state.update(phase='review' if approved(state) and state['draft'] and 'evidence' not in changed else
                          ('produce' if approved(state) else 'awaiting_confirmation'), waiting_reason=None, resume_phase=None)
@@ -317,13 +448,67 @@ def apply(state, request, base, store=None):
         check_used(state, store)
     elif action == 'submit_intention':
         require(phase in {'intake', 'awaiting_confirmation'}, 'Return to intake to change scope')
-        state.update(intention=artifact(base, request.get('path')), approval=None, review=None, phase='awaiting_confirmation')
+        plan_was_frozen = state['plan'] is not None
+        state.update(intention=artifact(base, request.get('path')), approval=None, review=None,
+                     phase='awaiting_confirmation', plan=None, step_records={}, evidence_binder=None,
+                     plan_invalidated=state['plan_invalidated'] or plan_was_frozen)
     elif action == 'confirm':
         require(phase == 'awaiting_confirmation' and state['intention'] and not state['impact_pending'], 'No ready intention to confirm')
         require(nonempty(request.get('message_ref')), 'Supply actual user confirmation reference; do not invent one')
         state.update(approval={'message_ref': request['message_ref'], 'intention_sha256': state['intention']['sha256']}, phase='produce')
+    elif action == 'freeze_plan':
+        require(phase == 'produce' and approved(state), 'Freeze the execution card under a confirmed intention')
+        require(nonempty(request.get('message_ref')), 'Supply the actual user confirmation reference for the card')
+        if state['plan'] is not None or state['plan_invalidated']:
+            require(nonempty(request.get('reason')), 'Editing/refreezing a card needs a reason and affected scope')
+        record = artifact(base, request.get('path'))
+        steps = normalize_plan(read_json(record['path']))
+        state.update(plan={'path': record['path'], 'sha256': record['sha256'], 'frozen': True,
+                           'message_ref': request['message_ref'], 'intention_sha256': state['intention']['sha256'],
+                           'steps': steps},
+                     step_records={}, evidence_binder=None, plan_invalidated=False, review=None)
+    elif action == 'complete_step':
+        require(phase == 'produce' and approved(state), 'Complete steps while producing under a confirmed intention')
+        plan = state['plan']
+        require(plan is not None and plan.get('frozen') is True, 'Freeze the execution card before completing steps')
+        step_id = request.get('id')
+        step = next((item for item in plan['steps'] if item['id'] == step_id), None)
+        require(step is not None, 'Unknown execution-card step')
+        require(step_id not in state['step_records'], 'Step already completed: ' + step_id)
+        evidence = artifacts(base, request.get('evidence', []))
+        require(bool(evidence), 'Step completion needs at least one evidence file')
+        for item in evidence:
+            require(Path(item['path']).stat().st_size > 0, 'Evidence file is empty: ' + item['path'])
+        if step['screenshot_required']:
+            require(any(Path(item['path']).suffix.lower() in IMAGE_SUFFIXES for item in evidence),
+                    'Screenshot-required step needs an image evidence file')
+        marks = request.get('must_include')
+        if step['must_include']:
+            require(isinstance(marks, dict) and set(marks) == set(step['must_include']),
+                    'Mark every must_include item for step ' + step_id)
+            for key, value in marks.items():
+                passed = value == 'pass' or (isinstance(value, dict) and value.get('status') == 'pass')
+                require(passed, 'must_include not passed: ' + key)
+        else:
+            require(marks in (None, {}), 'Step ' + step_id + ' declares no must_include items')
+        state['step_records'][step_id] = {'evidence': evidence,
+                                          'must_include': {key: 'pass' for key in step['must_include']}}
+        state['evidence_binder'] = None
+        state['review'] = None
+    elif action == 'bind_evidence':
+        require(phase == 'produce' and approved(state), 'Bind evidence while producing under a confirmed intention')
+        plan = state['plan']
+        require(plan is not None and plan.get('frozen') is True, 'Freeze the execution card before binding evidence')
+        missing = [step['id'] for step in plan['steps'] if step['id'] not in state['step_records']]
+        require(not missing, 'Complete all execution-card steps before binding: ' + ', '.join(missing))
+        state['evidence_binder'] = {'status': 'ok', 'plan_sha256': plan['sha256'],
+                                    'summary_sha256': memory.sha(binder_payload(state))}
+        state['review'] = None
     elif action == 'submit_draft':
         require(phase == 'produce' and approved(state), 'Production requires confirmed intention')
+        require(not state['plan_invalidated'], 'Refreeze the changed execution card before writing')
+        if state['plan'] is not None:
+            plan_ready_for_submit(state)
         candidate = artifacts(base, request.get('paths'))
         require(bool(candidate), 'Candidate cannot be empty')
         state.update(draft=candidate, evidence=artifacts(base, request.get('evidence', [])), review=None, phase='review')
@@ -385,6 +570,7 @@ def transact(path, request, memory_root=None):
                      intention=None, draft=[], evidence=[], approval=None, review=None, impact_pending=False,
                      waiting_reason=None, resume_phase=None, hold=None, events=[])
         memory_defaults(state)
+        plan_defaults(state)
         event(state, 'init', 'Initialized; no user approval implied')
     else:
         state = read_json(path)
@@ -400,6 +586,7 @@ def transact(path, request, memory_root=None):
                     stream.flush()
                     os.fsync(stream.fileno())
             memory_defaults(state)
+        plan_defaults(state)
         validate(state)
         # Explicit inventory repair can remove missing sources; it never advances.
         changed = [] if request.get('action') == 'set_sources' else reconcile(state)
@@ -452,7 +639,11 @@ def main():
                           'task_id': state['task_id'], 'session_ref': state['session_ref'], 'invocation_id': state['invocation_id'],
                           'lessons_basis': lessons_basis(state), 'adoption_generation': state['adoption_generation'],
                           'lessons_used': state['lessons_used'], 'lessons_receipt': state['lessons_receipt'],
-                          'memory_impact_pending': state['memory_impact_pending']}, ensure_ascii=False))
+                          'memory_impact_pending': state['memory_impact_pending'],
+                          'plan_frozen': bool(state['plan'] and state['plan'].get('frozen')),
+                          'steps_completed': sorted(state['step_records']),
+                          'evidence_binder_ok': bool(state['evidence_binder']
+                                                     and state['evidence_binder'].get('status') == 'ok')}, ensure_ascii=False))
         return 0
     except (GuardError, OSError, ValueError, TypeError, KeyError) as error:
         print(json.dumps({'ok': False, 'error': str(error)}, ensure_ascii=False))
