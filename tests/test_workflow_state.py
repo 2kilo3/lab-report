@@ -22,7 +22,8 @@ class WorkflowTests(unittest.TestCase):
         self.state = self.root / 'state.json'
         for name in ('source.txt', '意图.md', 'report.docx', 'screen.png'):
             (self.root / name).write_text('synthetic fixture ' + name, encoding='utf-8')
-        self.call('init', maker='maker-session', sources=['source.txt'])
+        self.call('init', maker='maker-session', sources=['source.txt'],
+                  execution_required=False, require_materials_map=False)
 
     def call(self, action, **kwargs):
         return w.transact(self.state, dict(action=action, **kwargs))
@@ -90,13 +91,14 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(state['plan']['steps'][0]['id'], 'S1')
 
     def test_optional_tool_and_objects_are_kept(self):
-        self.write_plan([self.plan_step('S1', tool='Postman', objects=['c0', 's1', 'h1'])])
+        self.write_plan([self.plan_step('S1', tool='Postman', objects=['c0', 's1', 'h1'],
+                                        must_include=['Postman request panel', 'c0', 's1', 'h1'])])
         self.confirmed()
         state = self.freeze()
         step = state['plan']['steps'][0]
         self.assertEqual(step['tool'], 'Postman')
         self.assertEqual(step['objects'], ['c0', 's1', 'h1'])
-        self.complete(marks={'filename visible': 'pass'})
+        self.complete(marks={'Postman request panel': 'pass', 'c0': 'pass', 's1': 'pass', 'h1': 'pass'})
         self.call('bind_evidence')
 
     def test_invalid_tool_and_duplicate_objects_rejected(self):

@@ -37,7 +37,7 @@ Step Card（执行卡）把已确认意图翻译成**可逐步执行、可逐步
 | `on_fail` | 是 | 失败后的有界处理，如 `retry_once → ask_user`、`replan_capture_filter` |
 | `evidence_ids` | 否 | 与该步关联的证据编号，便于 Evidence Binder 和报告图号对应 |
 
-机器登记还会检查：步骤 `id` 唯一、`modality` 合法、`screenshot_required` 为布尔、`must_include` 无重复、`forbidden_shortcuts` 非空；`gui` 步骤的 `must_include` 应写清界面/字段，不能只写“成功”。`tool` 若填写须为非空字符串；`objects` 若填写须为非空字符串数组。脚本只保存和回显这两个字段，是否逐项出现在证据中仍由 `must_include` 验收与独审核对。
+机器登记还会检查：步骤 `id` 唯一、`modality` 合法、`screenshot_required` 为布尔、`must_include` 无重复、`forbidden_shortcuts` 非空；`gui` 步骤的 `must_include` 应写清界面/字段，不能只写“成功”。`tool` 若填写须为非空字符串；`objects` 若填写须为非空字符串数组。**脚本强制契约**：填写 `tool` 时，`must_include` 至少一项包含该工具名（如“Postman 请求与响应面板”）；填写 `objects` 时，每个对象都须出现在至少一项 `must_include` 中。缺失则 `freeze_plan` 拒绝冻结，并列出缺项。旧卡没有 `tool`/`objects` 仍可冻结。
 
 `must_include` 写法与 `tool`/`objects` 对齐：
 - 有 `tool` 时，至少一项写明该工具窗口/界面（如“Postman 请求与响应面板”），不能只写“请求成功”。
@@ -52,7 +52,7 @@ Step Card（执行卡）把已确认意图翻译成**可逐步执行、可逐步
 3. **标记并冻结**：把卡改为 `frozen: true`，调用 `freeze_plan`，请求中带卡路径和真实确认引用 `message_ref`。脚本校验卡结构，并记录卡摘要与当前意图摘要。
 4. **执行**：一次做一步；每步后观察结果，调用 `complete_step`，提交真实证据路径和逐项 `must_include` 结果。
 5. **封存**：全部步骤完成后调用 `bind_evidence`。脚本核对所有步骤、证据文件和摘要，生成 `evidence_binder`。
-6. **写作出口**：`submit_draft` 在登记过执行卡时要求冻结卡 + 全部步骤完成 + 证据绑定通过；未登记执行卡的任务（如纯审查、无意向执行步骤的文档修改）仍走原流程。
+6. **写作出口**：`submit_draft` 在 `execution_required=true`（新任务默认）或登记过执行卡时，要求冻结卡 + 全部步骤完成 + 证据绑定通过；纯审查、纯写作须在确认意图前用 `set_execution_required` 显式关闭，旧状态缺该字段时保留 deprecated 旁路。
 
 卡与意图摘要绑定：意图 MD 变化会使旧卡失效并要求重新确认与冻结，不能沿用旧步骤记录。**改卡/重冻结**：修改卡文件后再次调用 `freeze_plan`，必须提供 `reason`；脚本清除旧的步骤完成记录和证据绑定，要求重新执行受影响步骤。发现更优解、指导书歧义或环境变化时，先改卡再继续，不先做后补。
 
@@ -62,7 +62,7 @@ Step Card（执行卡）把已确认意图翻译成**可逐步执行、可逐步
 
 | 动作 | 前置 | 拒绝条件 |
 | --- | --- | --- |
-| `freeze_plan` | 意图已确认，phase=`produce` | 卡未标 `frozen: true`；缺 `message_ref`；步骤结构非法；重冻结缺 `reason`；意图已变化 |
+| `freeze_plan` | 意图已确认，phase=`produce` | 卡未标 `frozen: true`；缺 `message_ref`；步骤结构非法；`tool`/`objects` 未被 `must_include` 点名覆盖；重冻结缺 `reason`；意图已变化 |
 | `complete_step` | 已冻结执行卡，phase=`produce` | 执行卡未冻结；步骤不存在或已完成；证据文件缺失/为空；`screenshot_required` 步骤无图片证据；`must_include` 未逐项标 `pass` |
 | `bind_evidence` | 所有步骤已完成 | 仍有未完成步骤；证据缺失/摘要不符 |
 | `submit_draft` | 登记过执行卡时 | 未冻结；步骤未全完成；证据绑定缺失或与当前卡/步骤不符 |
