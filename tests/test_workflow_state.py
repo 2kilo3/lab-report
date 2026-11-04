@@ -89,6 +89,28 @@ class WorkflowTests(unittest.TestCase):
         self.assertTrue(state['plan']['frozen'])
         self.assertEqual(state['plan']['steps'][0]['id'], 'S1')
 
+    def test_optional_tool_and_objects_are_kept(self):
+        self.write_plan([self.plan_step('S1', tool='Postman', objects=['c0', 's1', 'h1'])])
+        self.confirmed()
+        state = self.freeze()
+        step = state['plan']['steps'][0]
+        self.assertEqual(step['tool'], 'Postman')
+        self.assertEqual(step['objects'], ['c0', 's1', 'h1'])
+        self.complete(marks={'filename visible': 'pass'})
+        self.call('bind_evidence')
+
+    def test_invalid_tool_and_duplicate_objects_rejected(self):
+        self.confirmed()
+        self.write_plan([self.plan_step('S1', tool='')])
+        with self.assertRaises(w.GuardError):
+            self.freeze()
+        self.write_plan([self.plan_step('S1', objects=['c0', 'c0'])])
+        with self.assertRaises(w.GuardError):
+            self.freeze()
+        self.write_plan([self.plan_step('S1', objects=['c0', ''])])
+        with self.assertRaises(w.GuardError):
+            self.freeze()
+
     def test_complete_step_requires_frozen_card(self):
         self.confirmed()
         with self.assertRaises(w.GuardError):

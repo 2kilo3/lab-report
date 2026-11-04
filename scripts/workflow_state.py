@@ -150,11 +150,18 @@ def normalize_plan(value):
         forbidden = raw.get('forbidden_shortcuts')
         require(isinstance(forbidden, list) and forbidden and all(nonempty(x) for x in forbidden),
                 'Step ' + step_id + ' needs concrete forbidden_shortcuts')
+        tool = raw.get('tool')
+        require(tool is None or nonempty(tool), 'Step ' + step_id + ' has invalid tool')
+        objects = raw.get('objects', [])
+        require(isinstance(objects, list) and all(nonempty(x) for x in objects),
+                'Step ' + step_id + ' has invalid objects')
+        require(len(set(objects)) == len(objects), 'Step ' + step_id + ' has duplicate objects')
         evidence_ids = raw.get('evidence_ids', [])
         require(isinstance(evidence_ids, list) and all(nonempty(x) for x in evidence_ids),
                 'Step ' + step_id + ' has invalid evidence_ids')
         steps.append({'id': step_id, 'source': raw['source'], 'goal': raw['goal'],
-                      'modality': raw['modality'], 'action': raw['action'],
+                      'modality': raw['modality'], 'tool': tool, 'objects': objects,
+                      'action': raw['action'],
                       'screenshot_required': raw['screenshot_required'], 'must_include': must,
                       'forbidden_shortcuts': forbidden, 'verify': raw['verify'],
                       'on_fail': raw['on_fail'], 'evidence_ids': evidence_ids})
@@ -174,6 +181,10 @@ def binder_payload(state):
             'must_include': record['must_include'],
             'evidence': [{'path': item['path'], 'sha256': item['sha256']} for item in record['evidence']],
         }
+        if step.get('tool'):
+            steps[step['id']]['tool'] = step['tool']
+        if step.get('objects'):
+            steps[step['id']]['objects'] = step['objects']
     return {'plan_sha256': plan['sha256'], 'steps': steps}
 
 
@@ -215,6 +226,9 @@ def validate_plan_state(state):
                 and isinstance(step.get('screenshot_required'), bool)
                 and isinstance(step.get('must_include'), list)
                 and isinstance(step.get('forbidden_shortcuts'), list), 'Invalid plan step')
+        require(step.get('tool') is None or nonempty(step.get('tool')), 'Invalid plan step tool')
+        require(isinstance(step.get('objects', []), list)
+                and all(nonempty(item) for item in step.get('objects', [])), 'Invalid plan step objects')
     for step_id, record in state['step_records'].items():
         require(step_id in ids and isinstance(record, dict) and isinstance(record.get('evidence'), list)
                 and record['evidence'] and all(valid_artifact(item) for item in record['evidence'])

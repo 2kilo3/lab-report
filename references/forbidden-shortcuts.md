@@ -107,9 +107,54 @@
 | B13.1 | **Assume pre-installed / pre-configured** / 假设已经装好配好 `[推断/扩展]` | 跳过准备步 | 按指导书再走一遍准备并截，或证明复用经用户确认 | 意图 MD 写明“复用已有环境”且列出免做步 | 免做步必须在冻结卡里显式 `skipped` + 理由 |
 | B13.2 | **Assume action succeeded without screenshot** / 无图假设成功 `[来源:Anthropic-CU]` | 省一轮 | 每步后评估截图一句话 | — | gate 无图拒 `complete_step` |
 
+## B14. Tool-name substitution（具名工具不可替换）`[来源:lab8-iter]`
+
+| # | Pattern | Why AI prefers | Human alternative | Allowed when | Step Card |
+| --- | --- | --- | --- | --- | --- |
+| B14.1 | **Postman-vs-curl** / 用 CLI 冒充具名 GUI 工具 | `curl` 一条命令即可拿到响应，省去开窗口和排版 | 按指导书在 Postman（或其它点名工具）中建请求、发送、截请求与响应面板 | 指导书明确要求用 curl/Invoke-RestMethod | `modality: gui`；`tool: "Postman"`；`must_include: ["Postman 窗口", "请求 URL", "响应状态码/关键字段"]`；禁“curl/Invoke-RestMethod 输出冒充 Postman 窗口” |
+| B14.2 | **Hidden host→guest forwarding** / 不说明转发关系 | 宿主机 Postman 能通客户机服务，正文省略中间转发 | 正文如实写“宿主机 Postman 经本地端口转发访问客户机 REST”；证据仍截 Postman 窗口 | — | `tool` 写 Postman；`forbidden_shortcuts: ["只交 curl 返回值，不交 Postman 界面", "省略端口转发说明"]` |
+
+判断口径：指导书写了什么具名工具，主证据就是什么；同族 CLI 只能后台自检，不能改写成学生操作步骤。
+
+## B15. Object-set substitution（对象清单不可替换）`[来源:lab8-iter]`
+
+| # | Pattern | Why AI prefers | Human alternative | Allowed when | Step Card |
+| --- | --- | --- | --- | --- | --- |
+| B15.1 | **Wrong topology** / 用另一拓扑冒充基础拓扑 | 进阶拓扑已建好，截图更“完整” | 按指导书重建/打开基础拓扑，节点集合与连线逐项可见 | 指导书明确允许复用且对象集合相同 | `objects: ["c0","s1","s2","s3","h1"…"h6"]`；`must_include` 逐项写节点名；禁“用进阶 1s3h 拓扑冒充基础拓扑” |
+| B15.2 | **Partial object list** / 只截部分对象就称完成 | 少截少核对 | 全部指定节点/主机名/文件在同一或连续可读证据中出现 | 指导书只要求子集 | `objects` 与 `must_include` 一一对应；禁“只截 c0+s1 就称 c0+s1/s2/s3+h1–h6 已建” |
+
+## B16. Prompt / batching imitation（提示符与批量合成）`[来源:lab8-iter]`
+
+| # | Pattern | Why AI prefers | Human alternative | Allowed when | Step Card |
+| --- | --- | --- | --- | --- | --- |
+| B16.1 | **Foreign prompt** / 非约定提示符冒充学生终端 | 通用 root shell 最省事 | 使用指导书环境的真实提示符（如 `ubuntu@sdnhubvm…$`），保留用户名/主机线索 | 指导书明确使用该 shell/提示符 | `must_include` 含“提示符与环境可辨认”；禁“`bash-4.3$`/`root@localhost` 等非约定提示符冒充” |
+| B16.2 | **One-line batch for multi-step guide** / 分号批量合成一屏 | 一条命令跑完所有步骤 | 指导书分几步就分几次真实执行与截取；保留每步输出 | 指导书本身就是一条命令 | 每步独立 `screenshot_required`；禁“用 `;`/`&&` 把多步合成一屏后只截最终输出” |
+
+## B17. Annotation defaults（报告标注）`[来源:lab8-iter]`
+
+| # | Pattern | Why AI prefers | Human alternative | Allowed when | Step Card |
+| --- | --- | --- | --- | --- | --- |
+| B17.1 | **Auto red-box everything** / 默认满图红框 | 看起来“重点突出” | 默认不画；用户明确要求时才加少量标注 | 用户明确要求标注 | 卡片不要求标注；`forbidden_shortcuts: ["默认加红框/箭头"]` |
+| B17.2 | **Occluding or skewed boxes** / 标注遮挡或歪斜 | 随手画框覆盖字段 | 只框关键区域，不遮 `must_include` 字段，框线与内容大致轴对齐 | 用户要求标注 | 独审核对关键字段未被遮挡；禁“红框盖住状态码/节点名” |
+
+说明：MiniEdit 控制链路等软件自带红虚线、选中高亮不算“报告标注红框”，不能据此判违规，也不能拿它冒充用户要求的标注。
+
+## B18. Cross-round evidence（跨轮证据）`[来源:lab8-iter]`
+
+| # | Pattern | Why AI prefers | Human alternative | Allowed when | Step Card |
+| --- | --- | --- | --- | --- | --- |
+| B18.1 | **Stale MAC/annotation as current** / 旧会话图冒充本轮 | 旧图现成 | 配置、MAC、拓扑或会话轮次变化后重采；旧标注一并重做 | 证明对象与本轮完全相同且仍有效 | `must_include` 含本轮可辨认的 MAC/主机名/轮次线索；禁“旧图带过时标注或旧 MAC 直接复用” |
+
+## B19. Style escalation（样式升级）`[来源:lab8-iter]`
+
+| # | Pattern | Why AI prefers | Human alternative | Allowed when | Step Card |
+| --- | --- | --- | --- | --- | --- |
+| B19.1 | **Heading black-font blow-up** / 小节标题换黑体放大 | “标题要醒目” | 与正文同中文字体、同字号；模板允许时仅加粗 | 模板明确规定该级标题字体/字号 | 非执行卡项，由 [文档输出](document-output.md) 与 [审查清单](review-checklist.md) 核对；禁“把「1. 进阶 A…」改为黑体大字” |
+
 ## 使用提醒
 
 - 本目录只提供**类别与模式**；落地时把与本步相关的 2–4 条具体禁令抄进 Step Card 的 `forbidden_shortcuts`，并让 `must_include` 写出可核对的证据字段。
 - 同一模式在不同实验里可能有不同边界；是否允许以**指导书原文/已确认意图**为准，不以工具是否方便为准。
 - 终端本身不是捷径。可见终端中的编译、运行、`ping` 按指导书照常使用；被禁止的是用终端文本冒充 GUI 过程，或伪造未发生的运行。
+- 具名工具、对象清单、提示符、标注和跨轮证据按 B14–B18 检查；报告样式升级按 B19 检查。指导书附步骤/addon 未进意图也未显式不做，按漏项处理，不当作“可选优化”。
 - 生成图、网图、P 图、伪造编辑器/终端 chrome 没有“允许”分支；独立审查应直接拒绝。

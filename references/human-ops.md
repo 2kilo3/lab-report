@@ -17,6 +17,13 @@
 5. **必截帧 = 执行卡并集，不是模型主观的“关键”。** `screenshot_required=true` 的步骤一张都不能少；中间验收点不可合并跳过。旧版“截关键帧，不截每个点击”容易被钻空子，现已收紧为“截取已冻结执行卡中 `screenshot_required` 的必截点；不截无意义的每个滚动/点击；不得合并或跳过卡上的中间验收点”。`[来源:lab-report]` 历史表述需收紧；`[来源:Bocchiid]` 阶段证据组逐张核对 `must_include`；`[来源:Anthropic-CU]` 每步后截图并评估是否成功，未确认不得下一步。
 6. **后台工具可用，展示必须像学生做。** 可用命令定位、校验或做后台核验；**报告展示**仍走编辑器/资源管理器/指导书指定的 GUI。不为截图重绘、不伪造编辑器/终端图。`[来源:lab-report]` 行为场景“自然代码截图不限制后台工具”。
 7. **不假设成功 / 不假设“已经做过”。** 动作后必须观察；旧截图只证明旧状态；环境变了要重采。`[来源:Anthropic-CU]` “After each step, take a screenshot and carefully evaluate…”；`[来源:lab-report]` 旧证据/环境变更相关条目。
+8. **具名工具就是模态（Tool name binds modality）。** 指导书/附步骤写 Postman、Wireshark、MiniEdit 等具体工具时，主证据必须是该工具窗口；`curl`、`Invoke-RestMethod`、`tshark` 同族 CLI 只能后台自检，不得作为报告主证据，也不得写成“学生用 curl 完成 Postman 步骤”。`[来源:lab8-iter]`
+9. **对象清单绑定（Object-set binding）。** 指导书写明的节点集合（如 `c0+s1/s2/s3+h1–h6`）、主机名、接口或文件必须进执行卡 `objects`/`must_include`；禁止用同实验的另一拓扑（如进阶 `1s3h`）冒充基础拓扑证据。`[来源:lab8-iter]`
+10. **交互提示符要像该环境（Prompt fidelity）。** 交互式学生终端须显示符合环境的提示符（如 `ubuntu@sdnhubvm…$`），不得用 `bash-4.3$` 等非约定提示符冒充；指导书分多步时，不得用分号/一行批量命令合成一屏，除非指导书本身就是一条命令。`[来源:lab8-iter]`
+11. **报告标注默认关闭（Annotation opt-in）。** 红框/箭头默认不画；用户明确要求时才可加，且不得遮挡关键字段、框线大致轴对齐。MiniEdit 控制链路等软件自带红虚线不算报告标注红框。`[来源:lab8-iter]`
+12. **样式不得擅自升级（No style escalation）。** 允许区小节标题不得换为黑体或放大字号；与正文同中文字体、同字号，必要时仅加粗。样式规则见 [文档输出](document-output.md)，独审按 [审查清单](review-checklist.md) 核对。`[来源:lab8-iter]`
+13. **跨轮证据失效（Round-bound evidence）。** 配置、MAC、拓扑或会话轮次变化后，旧图不得冒充本轮；旧图带过时标注或旧会话 MAC 必须重采。`[来源:lab-report]` B11.3 的收紧；`[来源:lab8-iter]`
+14. **宿主机工具 + 客户机服务须如实说明（Forwarding disclosure）。** 允许宿主机 Postman 经本地端口转发访问客户机 REST，但正文须写明转发关系；主证据仍是 Postman 窗口，不是只交 curl 返回值。`[来源:lab8-iter]`
 
 ## 2. 仿人操作总则
 
@@ -47,6 +54,7 @@
 
 不允许：
 - 用 `curl`/`wget`/包管理器静默安装代替指导书要求的下载页或安装向导；
+- 用 `curl`/`Invoke-RestMethod` 等 CLI 输出冒充指导书指定的 Postman（或其它具名 GUI）窗口；
 - 用 `tshark`/`tcpdump` 文本、`tasklist`/`Get-Process`/`ps` 文本、`cat`/`sed` 输出冒充 Wireshark、任务管理器或编辑器截图；
 - 用哈希画面代替“下载/打开文件”的过程证据；
 - 把后台核验结果自动写成报告中的“学生操作步骤”；后台额外核验不自动写入报告。`[来源:lab-report]`
@@ -56,7 +64,7 @@
 
 ## 5. 与 Step Card、Evidence Binder 的衔接
 
-- 执行前必须有一份经用户确认并冻结的执行卡；卡内每步声明 `modality`、`screenshot_required`、`must_include`、`forbidden_shortcuts`。见 [Step Card 与冻结](step-cards.md)。
+- 执行前必须有一份经用户确认并冻结的执行卡；卡内每步声明 `modality`、`tool`、`objects`、`screenshot_required`、`must_include`、`forbidden_shortcuts`。见 [Step Card 与冻结](step-cards.md)。
 - 每完成一步，用 `complete_step` 记录证据文件与 `must_include` 逐项验收结果；缺证据、证据为空或 `must_include` 未标通过时拒绝完成。
 - 全部步骤完成后封存证据绑定（`bind_evidence`），才允许 `submit_draft` 进入写作。没有登记执行卡的任务（例如纯审查任务）保持原有意图→成稿→独审流程。
 - 发现指导书/环境有更优做法：先改卡、重新冻结并说明差异；不得先按捷径做完再回头补写卡片。
