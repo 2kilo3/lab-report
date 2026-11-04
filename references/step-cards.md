@@ -27,6 +27,8 @@ Step Card（执行卡）把已确认意图翻译成**可逐步执行、可逐步
 | `source` | 是 | 对应指导书/报告的具体章节或条目，便于追溯 |
 | `goal` | 是 | 本步要完成的可判断目标 |
 | `modality` | 是 | `gui` / `cli` / `mixed` / `manual`，按指导书主证据选择 |
+| `tool` | 建议 | 指导书点名的具体工具/界面，如 `Postman`、`Wireshark`、`MiniEdit`；不得用同类 CLI 替代 |
+| `objects` | 建议 | 本步必须出现的对象清单：拓扑节点、主机名、文件、接口或设备名；来自材料地图或指导书原文 |
 | `action` | 是 | 学生视角的实际动作序列；不写“用脚本代做” |
 | `screenshot_required` | 是 | 布尔值；`true` 表示本步必须有可读证据图，不能合并跳过 |
 | `must_include` | `screenshot_required` 时必填 | 证据中必须可辨认的字段；逐项验收，不是泛泛“有图” |
@@ -35,7 +37,13 @@ Step Card（执行卡）把已确认意图翻译成**可逐步执行、可逐步
 | `on_fail` | 是 | 失败后的有界处理，如 `retry_once → ask_user`、`replan_capture_filter` |
 | `evidence_ids` | 否 | 与该步关联的证据编号，便于 Evidence Binder 和报告图号对应 |
 
-机器登记还会检查：步骤 `id` 唯一、`modality` 合法、`screenshot_required` 为布尔、`must_include` 无重复、`forbidden_shortcuts` 非空；`gui` 步骤的 `must_include` 应写清界面/字段，不能只写“成功”。
+机器登记还会检查：步骤 `id` 唯一、`modality` 合法、`screenshot_required` 为布尔、`must_include` 无重复、`forbidden_shortcuts` 非空；`gui` 步骤的 `must_include` 应写清界面/字段，不能只写“成功”。`tool` 若填写须为非空字符串；`objects` 若填写须为非空字符串数组。脚本只保存和回显这两个字段，是否逐项出现在证据中仍由 `must_include` 验收与独审核对。
+
+`must_include` 写法与 `tool`/`objects` 对齐：
+- 有 `tool` 时，至少一项写明该工具窗口/界面（如“Postman 请求与响应面板”），不能只写“请求成功”。
+- 有 `objects` 时，逐项或成组写进 `must_include`（如“c0、s1、s2、s3、h1–h6 可见”）；不能只写“拓扑正确”。
+- 指导书的附步骤/addon 要么单独成卡，要么在意图中显式写明本次不做；卡里不能静默省略。`[来源:lab8-iter]`
+- 卡片不要求报告加红框/箭头。标注默认关闭（opt-in）；用户明确要求时才在证据展示副本上加，且不得遮挡 `must_include` 字段。软件自带的红虚线路由/选中高亮不算报告标注。`[来源:lab8-iter]`
 
 ## 3. 冻结流程
 
@@ -108,6 +116,7 @@ steps:
     source: "指导书§4 使用 Wireshark 捕获并查看 Packet-In"
     goal: "GUI 中选中报文并展开字段"
     modality: gui
+    tool: "Wireshark"
     action: "启动 Wireshark → 开始捕获 → 选中 Packet-In → 展开报文树"
     screenshot_required: true
     must_include:
@@ -180,6 +189,40 @@ steps:
     }
   ]
 }
+```
+
+具名工具与对象清单的最小写法（`[来源:lab8-iter]`）：
+
+```yaml
+  - id: S6
+    source: "指导书§4.2 用 Postman 验证 REST 服务"
+    goal: "在 Postman 中发起 GET 并读响应"
+    modality: gui
+    tool: "Postman"
+    objects: ["http://<客户机IP>:5000/restconf/data/..."]
+    action: "在 Postman 填 URL → Send → 展开响应"
+    screenshot_required: true
+    must_include:
+      - "Postman 窗口与请求 URL"
+      - "响应状态码与响应体关键字段"
+    forbidden_shortcuts:
+      - "curl/Invoke-RestMethod 输出冒充 Postman 窗口"
+      - "只交接口返回值文本，不交 Postman 界面"
+
+  - id: S7
+    source: "指导书§2 基础拓扑"
+    goal: "按 c0+s1/s2/s3+h1–h6 建成拓扑"
+    modality: gui
+    tool: "MiniEdit"
+    objects: ["c0", "s1", "s2", "s3", "h1", "h2", "h3", "h4", "h5", "h6"]
+    action: "在 MiniEdit 放置节点并连线"
+    screenshot_required: true
+    must_include:
+      - "MiniEdit 画布中 c0、s1/s2/s3、h1–h6 全部可见"
+      - "节点名称与连线可读"
+    forbidden_shortcuts:
+      - "用同实验的进阶 1s3h 拓扑冒充基础拓扑"
+      - "只交 ping 输出不交拓扑画布"
 ```
 
 ## 6. 反例（不要把卡写成这样）

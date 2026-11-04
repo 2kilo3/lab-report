@@ -26,7 +26,7 @@
 
 ## 执行卡逐步证据门
 
-登记执行卡时，状态新增 `plan`、`step_records`、`evidence_binder`、`plan_invalidated`。旧任务默认 `None / {} / None / false`，原有意图→成稿→独审流程不变；未登记执行卡的任务（如纯审查）不经过逐步门。状态文件中的 `plan.steps` 是 `freeze_plan` 时从卡文件规范化后的副本，卡文件本身才是权威来源。
+登记执行卡时，状态新增 `plan`、`step_records`、`evidence_binder`、`plan_invalidated`。旧任务默认 `None / {} / None / false`，原有意图→成稿→独审流程不变；未登记执行卡的任务（如纯审查）不经过逐步门。状态文件中的 `plan.steps` 是 `freeze_plan` 时从卡文件规范化后的副本，卡文件本身才是权威来源。`freeze_plan` 还会保存可选的 `tool`（具名工具）与 `objects`（拓扑节点、主机名等对象清单）；旧卡没有这两个字段仍有效，它们只随计划和证据绑定保存，是否逐项出现在证据中仍由执行者与独审核对。
 
 | 动作 | 前置 | 拒绝条件 |
 | --- | --- | --- |

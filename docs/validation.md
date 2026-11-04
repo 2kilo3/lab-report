@@ -54,6 +54,18 @@
 
 脚本只核对结构、文件存在、大小、图片扩展名和摘要；不能判定截图内容是否空白、窗口是否真实、模态是否被冒充，也不证明用户确认引用真实或独审独立。
 
+## 2.2.0 材料地图与编排增量验证
+
+日期：2026-11-04，Windows，Python 3.12.10，分支 `feat/materials-map-orchestration`（基于 main `0e5fdae`）。
+
+- 新增 `references/materials-map.md`（意图前材料地图硬门、`map_id` 追溯、分发精读与索引字段）与 `references/orchestration.md`（分段 session、审查输入白名单、REVIEW 表、干净修订会话、文件分工）；`SKILL.md` 升 2.2.0 并引用两者，意图出口改为先有地图、每条硬要求引用 `map_id`。
+- 同步收紧 `requirements-note.md`、`step-cards.md`、`execution.md`、`review-checklist.md`、`document-output.md`、`human-ops.md`、`forbidden-shortcuts.md`（新增 B14–B19）：具名工具不可用 CLI 冒充、拓扑/对象清单绑定、交互提示符与批量禁令、标注默认关闭、禁止标题换黑体/放大、跨轮 MAC/标注失效、宿主机转发说明。
+- `workflow_state.py` 的 `freeze_plan` 新增可选 `tool` 与 `objects` 字段并随计划保存；缺省时证据绑定摘要与旧卡保持一致。新增 2 项合成单测覆盖保留与非法值拒绝。
+- 运行 `python -B -m pytest -q`：68 项通过（基线 66 + 新增 2）。静态检查：Python 编译、`git diff --check`、Markdown 本地链接检查通过。
+- `tests/scenarios.md` 新增 57–63 为待执行行为设计（NOT EXECUTED），覆盖缺地图、长会话投喂摘要、Postman≠curl、拓扑冒充、提示符/批量、默认标注与标题升级、跨轮旧图与转发说明。没有在真实课程实验、Word 模板或宿主会话中执行这些场景。
+
+脚本只保存 `tool`/`objects` 并核对结构，不能判断截图是否真的出现该工具或对象；这仍由执行者与独立审查按实际画面核对。
+
 ## 风险与可执行测试对应
 
 | 风险 | 自动化覆盖 |
