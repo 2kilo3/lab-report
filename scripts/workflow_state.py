@@ -10,6 +10,7 @@ a same-permission writer can tamper with this ledger. See --help and notes.
 """
 import argparse
 from contextlib import nullcontext
+from datetime import datetime, timezone
 import hashlib
 import importlib.util
 import json
@@ -40,6 +41,20 @@ def require(test, message):
 
 def nonempty(value):
     return isinstance(value, str) and bool(value.strip())
+
+
+def utc_stamp():
+    return datetime.now(timezone.utc).isoformat(timespec='microseconds')
+
+
+def parse_stamp(value, message='Invalid timestamp'):
+    require(nonempty(value), message)
+    try:
+        parsed = datetime.fromisoformat(value)
+    except (TypeError, ValueError):
+        raise GuardError(message)
+    require(parsed.tzinfo is not None, message)
+    return parsed
 
 
 def read_json(path):
@@ -127,6 +142,12 @@ def plan_defaults(state, execution_required=False, require_materials_map=False):
     state.setdefault('execution_required', execution_required)
     state.setdefault('require_materials_map', require_materials_map)
     state.setdefault('materials_map', None)
+
+
+def stage_defaults(state):
+    """DONE gate fields; legacy states without a stage start keep the documented bypass."""
+    state.setdefault('stage_started_at', None)
+    state.setdefault('done_artifacts', [])
 
 
 def normalize_plan(value):
@@ -258,6 +279,57 @@ def review_gate(state, base, required=()):
     return {'ok': True, 'extra_required': list(required)}
 
 
+def done_gate(state, base, names):
+    """Refuse a DONE claim unless it names real, non-empty, current-stage artifacts."""
+    require(isinstance(names, list) and names and all(nonempty(name) for name in names),
+            'finish needs artifacts: a non-empty list of the deliverable paths actually produced')
+    started = None if state.get('stage_started_at') is None else parse_stamp(
+        state['stage_started_at'], 'Invalid stage start timestamp')
+    problems = []
+    records = []
+    seen = set()
+    for name in names:
+        path = (base / name).resolve()
+        key = str(path)
+        if key in seen:
+            problems.append('duplicate artifact: ' + key)
+            continue
+        seen.add(key)
+        if not path.is_file():
+            problems.append('missing artifact: ' + key)
+            continue
+        stat = path.stat()
+        if stat.st_size <= 0:
+            problems.append('empty artifact: ' + key)
+            continue
+        mtime = datetime.fromtimestamp(stat.st_mtime, timezone.utc)
+        if started is not None and mtime <= started:
+            problems.append('stale artifact older than this stage started at ' + state['stage_started_at'] + ': ' + key)
+            continue
+        records.append({'path': key, 'sha256': digest(path), 'size': stat.st_size,
+                        'mtime': mtime.isoformat(timespec='microseconds')})
+    require(not problems, 'DONE artifact check failed: ' + '; '.join(problems))
+    return records
+
+
+def validate_stage(state):
+    started = state.get('stage_started_at')
+    if started is not None:
+        require(isinstance(started, str), 'Invalid stage start timestamp')
+        parse_stamp(started, 'Invalid stage start timestamp')
+    done = state.get('done_artifacts')
+    require(isinstance(done, list), 'Invalid done artifact list')
+    for item in done:
+        require(valid_artifact(item) and type(item.get('size')) is int and item['size'] > 0
+                and nonempty(item.get('mtime')), 'Invalid done artifact record')
+        parse_stamp(item['mtime'], 'Invalid done artifact mtime')
+    if state['phase'] == 'done':
+        for item in done:
+            path = Path(item['path'])
+            require(path.is_file(), 'Declared done artifact is missing: ' + item['path'])
+            require(path.stat().st_size > 0, 'Declared done artifact is empty: ' + item['path'])
+
+
 def validate_plan_state(state):
     require(isinstance(state.get('execution_required'), bool), 'Invalid execution_required marker')
     require(isinstance(state.get('require_materials_map'), bool), 'Invalid materials-map gate marker')
@@ -328,6 +400,7 @@ def validate(state):
         require(not state['memory_impact_pending'], 'Unresolved memory impact')
         require(review_lessons_match(state['review'], state), 'No review for current memory adoption')
     validate_plan_state(state)
+    validate_stage(state)
 
 
 def memory_defaults(state):
@@ -638,6 +711,7 @@ def apply(state, request, base, store=None):
         require(phase == 'review' and state['review'] and state['review']['basis'] == basis(state), 'Fresh independent review required')
         # Re-read semantics as well as checking the stored artifact digest.
         state['review'] = review_record(base, state, state['review']['receipt']['path'])
+        state['done_artifacts'] = done_gate(state, base, request.get('artifacts'))
         state['phase'] = 'done'
     elif action == 'rollback':
         require(not state.get('hold'), 'Resolve existing execution hold before rollback')
@@ -690,7 +764,7 @@ def transact(path, request, memory_root=None):
                      intention=None, draft=[], evidence=[], approval=None, review=None, impact_pending=False,
                      waiting_reason=None, resume_phase=None, hold=None, events=[],
                      execution_required=execution_required, require_materials_map=require_materials_map,
-                     materials_map=None)
+                     materials_map=None, stage_started_at=utc_stamp(), done_artifacts=[])
         memory_defaults(state)
         plan_defaults(state, execution_required, require_materials_map)
         event(state, 'init', 'Initialized; execution_required=' + str(execution_required)
@@ -710,6 +784,7 @@ def transact(path, request, memory_root=None):
                     os.fsync(stream.fileno())
             memory_defaults(state)
         plan_defaults(state)
+        stage_defaults(state)
         validate(state)
         # Explicit inventory repair can remove missing sources; it never advances.
         changed = [] if request.get('action') == 'set_sources' else reconcile(state)
@@ -764,6 +839,8 @@ def main():
                           'lessons_used': state['lessons_used'], 'lessons_receipt': state['lessons_receipt'],
                           'memory_impact_pending': state['memory_impact_pending'],
                           'plan_frozen': bool(state['plan'] and state['plan'].get('frozen')),
+                          'stage_started_at': state['stage_started_at'],
+                          'done_artifacts': state['done_artifacts'],
                           'execution_required': state['execution_required'],
                           'require_materials_map': state['require_materials_map'],
                           'materials_map': state['materials_map'],

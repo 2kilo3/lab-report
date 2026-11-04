@@ -38,14 +38,14 @@ def replay(output):
         reviewed = scenario.review()
         trace.append({'step': '4 actual application and independent review binding',
                       'adopted': reviewed['lessons_used'], 'lessons_basis': w.lessons_basis(reviewed), 'review': reviewed['review']})
-        done = scenario.call('finish')
+        done = scenario.call('finish', artifacts=['report.docx'])
         assert done['phase'] == 'done'
         p.decide(ref, 'revoke')
         invalid = scenario.call('status')
         assert invalid['memory_impact_pending'] and invalid['phase'] == 'review'
         denied = False
         try:
-            scenario.call('finish')
+            scenario.call('finish', artifacts=['report.docx'])
         except w.GuardError:
             denied = True
         assert denied
@@ -55,7 +55,7 @@ def replay(output):
         detached = scenario.detach()
         assert not detached['lessons_used'] and detached['adoption_generation'] > 0
         scenario.review()
-        final = scenario.call('finish')
+        final = scenario.call('finish', artifacts=['report.docx'])
         assert final['phase'] == 'done'
         trace.append({'step': '6 local current-material revalidation then fresh review',
                       'phase': final['phase'], 'generation': final['adoption_generation'], 'history': final['lessons_history']})

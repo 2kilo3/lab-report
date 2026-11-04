@@ -32,7 +32,7 @@ task_id 标识跨会话报告任务；session_ref 由宿主命名空间与原生
 
 `consolidate` 默认每批最多 200 事件，可设 1..1000；host_adapter 的 end 最多 100。它只整理新分片：原载荷有结构化 lesson 时按七栏目提取，否则生成明确待核验的 hypothesis，并将原观察隔离于候选正文。主编排者可传已对照原始依据提炼的 candidates 和六栏目 recap；核心不调用模型，不把持久化说成语义验证。显式 `candidates: []` 表示本批无可复用经验；后续需要编辑已有内容时用 revise，保留原谱系。不凑已验证经验，也不在每个工具事件后全量反思。没有 SessionEnd 仍可从已落盘日志恢复；没有落盘且无可恢复来源的观察不能保证找回。
 
-经验登记含 id、revision、status、kind、scope、source_refs、verification、depends_on、memory_approval、created_at、last_used_at、last_verified_at；使用与核验时间分别更新。scope 是确实依赖条件的精确键值子集，例如 task_type、template_id/template_version、rubric、tools；条件未知拒用，不自动全局撤销。姓名、单次例外、默认值或一次成功不能自动升为长期规则。
+经验登记含 id、revision、status、kind、scope、source_refs、verification、depends_on、memory_approval、created_at、last_used_at、last_verified_at；使用与核验时间分别更新。scope 是确实依赖条件的精确键值子集，例如 task_type、template_id/template_version、rubric、tools；条件未知拒用，不自动全局撤销。姓名、单次例外、默认值或一次成功不能自动升为长期规则。课程/环境特例与通用规则的判定及存放位置（任务或课程 `NOTES.md`、带 scope 的 lesson）见 [执行与恢复](execution.md) 的经验分层；条件不匹配的特例不得套用。
 
 source_refs 指向已整理的原始事件，可附 artifacts 的绝对 path/sha256，查询重新读取并比较。verification 为 verified、evidence_refs 非空；技术方法、模板风险及 playbook 还需 independent:true 和 verifier。它们由真正独立核验者检查原始依据后提供；结构字段本身不能证明技术正确。hypothesis 即使被赞同也不能执行，须取得证据、形成适当类别新修订，再审批。
 
