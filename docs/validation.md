@@ -83,6 +83,20 @@
 
 
 
+## 2.4.0 并发、插图与完成验证增量
+
+日期：2026-11-05，Windows，Python 3.12，三个并行分支 `feat/2.4-w1-resource`、`feat/2.4-w2-figure`、`feat/2.4-w3-verify` 合并到 `feat/2.4-integration`。
+
+- **共享资源与并发**：新增 `references/shared-resources.md` 与 `scripts/resource_lock.py`（acquire/renew/release/status/break-stale，原子创建、owner 校验、租约与本机 pid 失效判定、fencing token、`<lock>.log` 留痕）；`orchestration.md` 新增“多 agent 并发调度”节，后续节号顺延。`tests/test_resource_lock.py` 18 项合成测试。
+- **插图可读性**：`document-output.md` 新增插图尺寸与可读性节，`review-checklist.md` 新增图文一致与页面可读性项；`scripts/figure_fit_check.py` 按版心、分栏、表格单元格估算显示宽度与页面字高，`tests/test_figure_fit_check.py` 10 项合成 DOCX 用例。
+- **完成验证**：`workflow_state.py` 的 `init` 记录 `stage_started_at`，`finish` 必须附 `artifacts`，检查存在、非空、mtime 与重复路径并登记 `done_artifacts`；旧状态缺起点时跳过 mtime（deprecated 旁路）。`tests/test_machine_gates.py` 新增 5 项。
+- **规则**：`forbidden-shortcuts.md` 新增 B20 破坏性操作检查点、B21 变通申报；`human-ops.md` 新增硬原则 15–16 与“自审记录与变通申报”节；`execution.md`/`memory.md` 增加通用规则与课程特例的分层判定。
+- **测试**：`python -m pytest -q` → **120 passed**。
+
+边界：`resource_lock.py` 只在受控入口互斥，不阻止同权限直接操作资源；`figure_fit_check.py` 只读版式参数估算，不渲染页面，`--glyph-px` 需按当次截图估计；DONE 门只证明产物存在、非空且新鲜，不证明内容正确或已被用户验收。真实课程实验与真实并发宿主会话未在本仓库内端到端执行。
+
+
+
 ## 风险与可执行测试对应
 
 | 风险 | 自动化覆盖 |
@@ -96,6 +110,7 @@
 | 不误伤、不复活与删除 | use_preserves_long_term_approval、broader_scope_cannot_bypass_revocation、same_source_independent_existing_rule_survives_revoke、delete_keeps_other_item_approval_and_scrubs_verification_text、delete_preserves_unconsumed_batch_decision_for_other_item、import_does_not_inherit_active_without_current_sources |
 | 宿主边界 | export_requires_clean_context_and_deduplicates 仅核对真实固定格式的合成样本；不能由 mock 推断默认注入已隔离 |
 | 2.3 执行卡/地图/工具与对象/独审白名单 | `tests/test_machine_gates.py` 的合成契约：无卡拒提交、地图登记与 map_ids、tool/objects 缺项拒冻结、review_gate 缺项拒绝；不证明真实截图或真实独审 |
+| 2.4 资源锁/插图估算/DONE 门 | `tests/test_resource_lock.py`、`tests/test_figure_fit_check.py`、`tests/test_machine_gates.py` 的合成用例；不证明真实并发宿主、真实页面渲染或交付内容正确 |
 | 2.3 标题字体/字号升级 | `tests/test_docx_style_check.py` 的纯 OOXML 夹具：显式 eastAsia 黑体/SimHei 或 sz 超基线报违规；不代替 Word 渲染或继承样式全量分析 |
 
 测试名在 tests/test_*.py，均有 test_ 前缀。原 38 项行为设计未改成通过，新增 39–50 同样为真实宿主 NOT EXECUTED；合成覆盖和真实人审/宿主验证分开。
