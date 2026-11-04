@@ -73,7 +73,7 @@ class MemoryWorkflowTests(unittest.TestCase):
         with self.assertRaises(w.GuardError):
             self.call('record_review', path='review.json')
         self.review()
-        self.assertEqual(self.call('finish')['phase'], 'done')
+        self.assertEqual(self.call('finish', artifacts=['report.docx'])['phase'], 'done')
 
     def test_revoked_authority_detected_with_unchanged_task_receipt(self):
         self.adopt()
@@ -82,7 +82,7 @@ class MemoryWorkflowTests(unittest.TestCase):
         self.protocol.decide(self.ref, 'revoke')
         self.assertEqual(before, self.state.read_bytes())
         with self.assertRaises(w.GuardError):
-            self.call('finish')
+            self.call('finish', artifacts=['report.docx'])
         state = self.call('status')
         generation = state['adoption_generation']
         self.assertTrue(state['memory_impact_pending'])
@@ -97,14 +97,14 @@ class MemoryWorkflowTests(unittest.TestCase):
         self.assertTrue(state['lessons_used'])
         self.assertGreater(state['adoption_generation'], 0)
         with self.assertRaises(w.GuardError):
-            self.call('finish')
+            self.call('finish', artifacts=['report.docx'])
         state = self.detach()
         self.assertFalse(state['lessons_used'])
         self.assertTrue(state['lessons_history'])
         with self.assertRaises(w.GuardError):
             self.call('record_review', path='review.json')
         self.review()
-        self.assertEqual(self.call('finish')['phase'], 'done')
+        self.assertEqual(self.call('finish', artifacts=['report.docx'])['phase'], 'done')
 
     def test_unrelated_update_and_receipt_refresh_keep_review(self):
         self.adopt()
@@ -116,7 +116,7 @@ class MemoryWorkflowTests(unittest.TestCase):
         self.assertEqual(w.lessons_basis(before), w.lessons_basis(state))
         state['lessons_receipt'] = {'corrupt': True}
         m.atomic(self.state, state)
-        self.assertEqual(self.call('finish')['phase'], 'done')
+        self.assertEqual(self.call('finish', artifacts=['report.docx'])['phase'], 'done')
 
     def test_root_identity_or_unavailability_denies_finish_but_detach_works(self):
         self.adopt()
@@ -131,12 +131,12 @@ class MemoryWorkflowTests(unittest.TestCase):
         self.assertTrue(state['memory_impact_pending'])
         self.assertFalse(self.detach()['lessons_used'])
         self.review()
-        self.assertEqual(self.call('finish')['phase'], 'done')
+        self.assertEqual(self.call('finish', artifacts=['report.docx'])['phase'], 'done')
 
     def test_post_delivery_revocation_records_later_impact(self):
         self.adopt()
         self.review()
-        self.call('finish')
+        self.call('finish', artifacts=['report.docx'])
         self.protocol.decide(self.ref, 'revoke')
         state = self.call('status')
         self.assertEqual(state['phase'], 'review')
@@ -156,13 +156,13 @@ class MemoryWorkflowTests(unittest.TestCase):
                 seen.append('locked')
             original_write(path, value)
         with patch.object(w, 'atomic_write', checked_write):
-            self.call('finish')
+            self.call('finish', artifacts=['report.docx'])
         self.assertEqual(seen, ['locked'])
 
     def test_migration_preserves_legacy_done_approval_and_receipt(self):
         self.files.receipt()
         self.call('record_review', path='review.json')
-        self.call('finish')
+        self.call('finish', artifacts=['report.docx'])
         state = m.read(self.state)
         legacy_fields = {'task_id', 'session_ref', 'invocation_id', 'memory_mode', 'lessons_used', 'lessons_receipt',
                          'adoption_generation', 'memory_impact_pending', 'lessons_history', 'memory_checkpoint'}
@@ -192,7 +192,7 @@ class MemoryWorkflowTests(unittest.TestCase):
             self.call('status')
             self.files.receipt()
             self.call('record_review', path='review.json')
-            self.assertEqual(self.call('finish')['phase'], 'done')
+            self.assertEqual(self.call('finish', artifacts=['report.docx'])['phase'], 'done')
 
     def test_new_material_scope_rechecks_existing_adoption(self):
         self.adopt()
@@ -202,7 +202,7 @@ class MemoryWorkflowTests(unittest.TestCase):
         state = self.call('status')
         self.assertTrue(state['memory_impact_pending'])
         with self.assertRaises(w.GuardError):
-            self.call('finish')
+            self.call('finish', artifacts=['report.docx'])
 
 
 if __name__ == '__main__':

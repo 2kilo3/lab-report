@@ -15,10 +15,10 @@
 - set_require_materials_map：require_materials_map（布尔值）、reason。仅确认意图前可用；任务确实不需要材料地图时才显式关闭。
 - confirm：message_ref（真实用户确认对话位置）。只可在待确认态使用；记录当前意图 SHA-256，进入 produce。工具不能验证这段引用是真的，宿主必须核实；绝不自动生成或将脚本成功当作授权。
 - submit_draft：paths（当前候选成果路径数组，至少一项）、evidence（证据路径数组，按任务可为空）。仅 produce，进入 review。
-- status：无其他字段。返回 phase、waiting_reason、basis（sources/intention/draft/evidence 的当前路径及摘要），以及 execution_required、require_materials_map、materials_map 等门状态。恢复前先调用；不是只显示过期标签。
+- status：无其他字段。返回 phase、waiting_reason、basis（sources/intention/draft/evidence 的当前路径及摘要），以及 execution_required、require_materials_map、materials_map、stage_started_at、done_artifacts 等门状态。恢复前先调用；不是只显示过期标签。
 - review_gate：required（可选，额外的非空路径数组）。仅 review/done 可用；检查材料地图、意图、冻结卡与逐步证据、当前成稿是否存在，缺项一次列出并拒绝。独审开始前运行；`record_review` 会自动执行同一检查。
 - record_review：path（独审 JSON 收据）。仅 review；先过 review_gate，再严格比对下述字段。
-- finish：仅 review 且现有收据仍匹配全部材料及检查时进入 done。不代表已上传或用户已验收。
+- finish：必须附 artifacts（非空路径数组，列出实际交付产物），不代表已上传或用户已验收。仅 review 且现有收据仍匹配全部材料及检查时可进入 done。逐项核对产物后登记 done_artifacts；详见 [DONE 产物门](#done-产物门完成声明)。
 - rollback：to 为 intake/produce/review；reason 写具体问题、影响范围及回退依据。清除旧审核，保留所有成果文件。回 intake 同时撤销确认；其他回退不能跳过确认。未评估来源变化只允许回 intake，不因此消除待评估标记。
 - pause：kind 为 blocked 或 failed；reason 必填。保存恢复阶段，blocked 表示等待输入/权限等，不冒称执行失败。
 - resume：reason 写解除阻塞/修复依据；先查实际文件，不允许跳过来源影响评估。
@@ -55,6 +55,19 @@ python -B scripts/workflow_state.py --state task/state.json --request task/revie
 
 
 
+## DONE 产物门（完成声明）
+
+“会话说做完了”不是完成依据。`init` 记录本任务受控工作阶段的起点 `stage_started_at`；`finish` 必须显式列出 `artifacts`，脚本对每项检查：
+
+- 路径存在且是普通文件；
+- 字节数大于 0；
+- mtime 严格晚于 `stage_started_at`；
+- 同一路径不重复。
+
+任一项失败时一次列出全部问题并拒绝，状态保持 review。通过后 `done_artifacts` 记录路径、SHA-256、字节数和 mtime；`status` 在 done 态会拒绝缺失或变空的已声明产物。
+
+直接复用本任务阶段开始前就存在的旧产物会因 mtime 过旧被拒；但把旧文件复制到新路径会刷新 mtime，脚本识别不了来源，仍须由执行证据和独审核对。该门只核对存在、非空和新鲜度，不能证明内容与任务相符、文件未被替换，也不证明已上传或被用户验收。旧状态没有 `stage_started_at` 时保留存在/非空校验并跳过 mtime（deprecated 旁路），避免把历史任务误判为新阶段，也避免强行改写旧完成记录。
+
 ## 独审收据 JSON
 
 字段：reviewer（不同于 maker 的独审上下文身份）、context_ref（真实独立会话/进程引用）、basis（复制对当前产物执行 status 返回的完整 basis）、verdict（pass）、checks。
@@ -83,7 +96,7 @@ requirements、writing、final_file 必须 pass，不可标不适用；其余条
 2. 用户确认实际意图后，confirm 填真实对话引用，开始授权范围内工作。
 3. 有实验执行时，先 freeze_plan 登记已确认执行卡，再逐步 complete_step；全部完成且证据匹配后 bind_evidence。新任务默认 `execution_required=true`，没有执行卡不得 `submit_draft`；纯审查/纯写作须在确认前用 `set_execution_required` 显式关闭。
 4. submit_draft 登记候选和证据。status 的 basis 交独审；独审检查原材料、意图、执行卡、逐步证据与成稿后写收据。
-5. record_review → finish。失败则按具体问题 rollback、修复、重新审查。不修改 JSON 强推状态。
+5. record_review → finish（`artifacts` 列出实际交付产物，DONE 门核对存在、非空、mtime 与重复路径）。失败则按具体问题 rollback、修复、重新审查。不修改 JSON 强推状态。
 6. 中断恢复先 status；缺 Python 时沿本文件同样的状态和守门条件手工记录，明确未使用可执行校验器。
 
 例：确认请求为 `{"action":"confirm","message_ref":"实际确认消息的可定位引用"}`。状态工具不会查询或验证该消息，调用者必须先检查用户确实确认了当前意图，示例不能作为授权。
