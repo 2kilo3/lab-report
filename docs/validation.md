@@ -62,6 +62,7 @@
 - 同步收紧 `requirements-note.md`、`step-cards.md`、`execution.md`、`review-checklist.md`、`document-output.md`、`human-ops.md`、`forbidden-shortcuts.md`（新增 B14–B19）：具名工具不可用 CLI 冒充、拓扑/对象清单绑定、交互提示符与批量禁令、标注默认关闭、禁止标题换黑体/放大、跨轮 MAC/标注失效、宿主机转发说明。
 - `workflow_state.py` 的 `freeze_plan` 新增可选 `tool` 与 `objects` 字段并随计划保存；缺省时证据绑定摘要与旧卡保持一致。新增 2 项合成单测覆盖保留与非法值拒绝。
 - 运行 `python -B -m pytest -q`：68 项通过（基线 66 + 新增 2）。静态检查：Python 编译、`git diff --check`、Markdown 本地链接检查通过。
+- 图示同步到 2.2.0：workflow 增加材料地图硬门与分段 session 编排，memory-architecture 更新版本横幅并补充“经验层不作调度/进度总线”；同一 `build_diagrams.py` 生成 SVG/HTML，PNG 从 SVG 渲染，尺寸 1200×1000 与 1200×800；两张图实际查看无缺字、遮挡或溢出，`diagram-design` 的 `self_check.py` 通过。
 - `tests/scenarios.md` 新增 57–63 为待执行行为设计（NOT EXECUTED），覆盖缺地图、长会话投喂摘要、Postman≠curl、拓扑冒充、提示符/批量、默认标注与标题升级、跨轮旧图与转发说明。没有在真实课程实验、Word 模板或宿主会话中执行这些场景。
 
 脚本只保存 `tool`/`objects` 并核对结构，不能判断截图是否真的出现该工具或对象；这仍由执行者与独立审查按实际画面核对。
