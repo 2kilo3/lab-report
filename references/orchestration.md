@@ -47,6 +47,8 @@
 
 白名单不扩大权限：读取受保护材料、上传、安装、创建凭据仍按宿主授权。
 
+**机器检查点**：独审开始前先运行 `python -B scripts/workflow_state.py --state <任务目录/state.json> --request <review-gate.json>`，其中请求为 `{"action":"review_gate","required":["<渲染页或原图路径>", "..."]}`；`record_review` 会在接收收据前自动执行同一检查。缺材料地图、意图、冻结卡/逐步证据、成稿或 `required` 路径时非零退出并一次列出缺项。该检查只证明产物在位，不能替代把原始材料交给独立上下文。
+
 ## 4. 审查产物：REVIEW 表
 
 独审输出必须能直接驱动修订，而不是一段散文。每条问题一行：

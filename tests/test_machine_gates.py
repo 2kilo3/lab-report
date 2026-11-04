@@ -130,5 +130,101 @@ class MachineGateTests(unittest.TestCase):
         self.assertTrue(self.freeze()['plan']['frozen'])
 
 
+    # M2: materials map gate
+
+    def write_map(self, name='MATERIALS_MAP.md', text='| M1 | guide | §1 | requirement | map gate | — | 意图 | main | indexed |\n'):
+        (self.root / name).write_text(text, encoding='utf-8')
+        return name
+
+    def test_intention_requires_registered_materials_map(self):
+        self.init(execution_required=False, require_materials_map=True)
+        with self.assertRaises(w.GuardError) as caught:
+            self.call('submit_intention', path='意图.md', map_ids=['M1'])
+        self.assertIn('MATERIALS_MAP', str(caught.exception))
+        with self.assertRaises(w.GuardError):
+            self.call('register_materials_map', path='missing-map.md')
+
+    def test_registered_map_and_map_ids_allow_intention(self):
+        self.init(execution_required=False, require_materials_map=True)
+        self.write_map()
+        self.call('register_materials_map', path='MATERIALS_MAP.md')
+        with self.assertRaises(w.GuardError) as caught:
+            self.call('submit_intention', path='意图.md')
+        self.assertIn('map_ids', str(caught.exception))
+        with self.assertRaises(w.GuardError) as caught:
+            self.call('submit_intention', path='意图.md', map_ids=['M9'])
+        self.assertIn('M9', str(caught.exception))
+        state = self.call('submit_intention', path='意图.md', map_ids=['M1'])
+        self.assertEqual(state['phase'], 'awaiting_confirmation')
+
+    def test_changed_materials_map_must_be_reregistered(self):
+        self.init(execution_required=False, require_materials_map=True)
+        self.write_map()
+        self.call('register_materials_map', path='MATERIALS_MAP.md')
+        self.write_map(text='| M1 | guide | §2 | requirement | changed | — | 意图 | main | indexed |\n')
+        with self.assertRaises(w.GuardError) as caught:
+            self.call('submit_intention', path='意图.md', map_ids=['M1'])
+        self.assertIn('changed', str(caught.exception))
+        self.call('register_materials_map', path='MATERIALS_MAP.md')
+        self.assertEqual(self.call('submit_intention', path='意图.md', map_ids=['M1'])['phase'],
+                         'awaiting_confirmation')
+
+    def test_materials_map_gate_can_be_disabled_with_reason(self):
+        self.init(execution_required=False, require_materials_map=False)
+        with self.assertRaises(w.GuardError):
+            self.call('set_require_materials_map', require_materials_map=True)
+        self.call('set_require_materials_map', require_materials_map=True,
+                  reason='Re-enable map gate for this intake')
+        self.call('set_require_materials_map', require_materials_map=False,
+                  reason='User supplied a single already-indexed task sheet')
+        self.assertEqual(self.call('submit_intention', path='意图.md')['phase'], 'awaiting_confirmation')
+
+    # M4: independent-review whitelist gate
+
+    def ready_with_card_and_map(self):
+        self.init(execution_required=True, require_materials_map=True)
+        self.write_map()
+        self.call('register_materials_map', path='MATERIALS_MAP.md')
+        self.call('submit_intention', path='意图.md', map_ids=['M1'])
+        self.call('confirm', message_ref='synthetic-test-only:user-confirmation')
+        self.write_plan()
+        self.freeze()
+        self.complete()
+        self.call('bind_evidence')
+        return self.submit()
+
+    def receipt(self):
+        state = self.call('status')
+        value = dict(reviewer='reviewer-session', context_ref='synthetic-test-only:separate-context',
+                     basis=w.basis(state), verdict='pass',
+                     checks={key: {'status': 'pass', 'reason': 'Synthetic fixture check'} for key in w.CHECKS})
+        (self.root / 'review.json').write_text(json.dumps(value, ensure_ascii=False), encoding='utf-8')
+
+    def test_review_gate_accepts_complete_whitelist(self):
+        self.ready_with_card_and_map()
+        state = self.call('review_gate', required=['screen.png'])
+        self.assertEqual(state['phase'], 'review')
+
+    def test_review_gate_lists_missing_required_paths(self):
+        self.ready_with_card_and_map()
+        with self.assertRaises(w.GuardError) as caught:
+            self.call('review_gate', required=['render.pdf'])
+        self.assertIn('render.pdf', str(caught.exception))
+
+    def test_review_gate_runs_before_draft(self):
+        self.init(execution_required=False, require_materials_map=False)
+        self.confirmed()
+        with self.assertRaises(w.GuardError):
+            self.call('review_gate')
+
+    def test_record_review_rejects_missing_materials_map(self):
+        self.ready_with_card_and_map()
+        self.receipt()
+        (self.root / 'MATERIALS_MAP.md').unlink()
+        with self.assertRaises(w.GuardError) as caught:
+            self.call('record_review', path='review.json')
+        self.assertIn('materials map file', str(caught.exception))
+
+
 if __name__ == '__main__':
     unittest.main()

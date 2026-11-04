@@ -10,11 +10,14 @@
 
 - init：maker（制作上下文身份）、sources（原始材料路径数组，可以为空但不能遗漏真实已有材料）、execution_required（可选，默认 true：制作+实验任务必须冻结执行卡）、require_materials_map（可选，默认 true：意图前必须登记材料地图）。现存状态禁止重新初始化。
 - set_execution_required：execution_required（布尔值）、reason。仅在 intake/awaiting_confirmation 可用；纯审查/纯写作任务可在确认前显式关闭执行卡门。
-- submit_intention：path（意图 MD）。仅 intake/awaiting_confirmation 可用，进入 awaiting_confirmation。
+- submit_intention：path（意图 MD）、map_ids（`require_materials_map=true` 时必填：非空字符串数组，每项须在已登记地图文本中出现）。仅 intake/awaiting_confirmation 可用，进入 awaiting_confirmation。地图未登记、文件丢失或登记后已改动时拒绝。
+- register_materials_map：path（`MATERIALS_MAP.md`）。仅确认意图前可用；登记路径与当前 SHA-256，供 submit_intention 机器校验。
+- set_require_materials_map：require_materials_map（布尔值）、reason。仅确认意图前可用；任务确实不需要材料地图时才显式关闭。
 - confirm：message_ref（真实用户确认对话位置）。只可在待确认态使用；记录当前意图 SHA-256，进入 produce。工具不能验证这段引用是真的，宿主必须核实；绝不自动生成或将脚本成功当作授权。
 - submit_draft：paths（当前候选成果路径数组，至少一项）、evidence（证据路径数组，按任务可为空）。仅 produce，进入 review。
-- status：无其他字段。返回 phase、waiting_reason、basis（sources/intention/draft/evidence 的当前路径及摘要）。恢复前先调用；不是只显示过期标签。
-- record_review：path（独审 JSON 收据）。仅 review；严格比对下述字段。
+- status：无其他字段。返回 phase、waiting_reason、basis（sources/intention/draft/evidence 的当前路径及摘要），以及 execution_required、require_materials_map、materials_map 等门状态。恢复前先调用；不是只显示过期标签。
+- review_gate：required（可选，额外的非空路径数组）。仅 review/done 可用；检查材料地图、意图、冻结卡与逐步证据、当前成稿是否存在，缺项一次列出并拒绝。独审开始前运行；`record_review` 会自动执行同一检查。
+- record_review：path（独审 JSON 收据）。仅 review；先过 review_gate，再严格比对下述字段。
 - finish：仅 review 且现有收据仍匹配全部材料及检查时进入 done。不代表已上传或用户已验收。
 - rollback：to 为 intake/produce/review；reason 写具体问题、影响范围及回退依据。清除旧审核，保留所有成果文件。回 intake 同时撤销确认；其他回退不能跳过确认。未评估来源变化只允许回 intake，不因此消除待评估标记。
 - pause：kind 为 blocked 或 failed；reason 必填。保存恢复阶段，blocked 表示等待输入/权限等，不冒称执行失败。
@@ -39,6 +42,18 @@
 `status` 额外返回 `plan_frozen`、`steps_completed`、`evidence_binder_ok`，恢复时先看实际卡与证据，不只看这些布尔值。卡文件被外部修改时，`status` 清除旧 plan、步骤记录和证据绑定并标 `plan_invalidated`，回到 produce；再次 `freeze_plan` 必须写 reason。卡同时绑定冻结时的意图摘要；意图变化会使卡失效，必须重新确认并冻结。某步证据文件变化时，该步记录和证据绑定失效，需重新采集并 `complete_step`。不要手改状态 JSON 绕过。
 
 脚本只检查文件存在、大小、图片扩展名、摘要和结构化验收结果；它不能判断截图内容是否可读、是否为空白、操作是否真的发生，也不能证明 GUI/CLI 模态没有冒充。这些仍由执行者按 [Step Card 与冻结](step-cards.md) 和 [禁止捷径目录](forbidden-shortcuts.md) 核对，并由独立审查复核。
+
+## 独审输入白名单门
+
+`review_gate` 在独立审查开始前核对可机器检查的白名单产物：`require_materials_map=true` 时须有已登记地图且文件存在；须有当前意图；`execution_required=true` 时须有冻结卡、全部步骤记录和有效证据绑定；须有当前成稿。`required` 可再追加渲染页、原图、日志等路径。缺项一次性列出，不因第一项失败就停止。该门只证明文件在位，不证明内容真实、审查独立或质量合格；宿主仍须按 [多会话与子代理编排](orchestration.md) 投喂原始材料并核实真实独审。
+
+命令示例（请求文件内为 `{"action":"review_gate","required":["render/page-1.png"]}`）：
+
+```sh
+python -B scripts/workflow_state.py --state task/state.json --request task/review-gate.json
+```
+
+
 
 ## 独审收据 JSON
 
