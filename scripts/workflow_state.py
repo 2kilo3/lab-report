@@ -118,12 +118,15 @@ def valid_artifact(item):
             and len(item['sha256']) == 64 and all(c in '0123456789abcdef' for c in item['sha256']))
 
 
-def plan_defaults(state):
-    """Additive execution-card fields; old states keep their intent/draft/review flow."""
+def plan_defaults(state, execution_required=False, require_materials_map=False):
+    """Additive execution-card fields; old states keep their documented legacy bypass."""
     state.setdefault('plan', None)
     state.setdefault('step_records', {})
     state.setdefault('evidence_binder', None)
     state.setdefault('plan_invalidated', False)
+    state.setdefault('execution_required', execution_required)
+    state.setdefault('require_materials_map', require_materials_map)
+    state.setdefault('materials_map', None)
 
 
 def normalize_plan(value):
@@ -159,6 +162,14 @@ def normalize_plan(value):
         evidence_ids = raw.get('evidence_ids', [])
         require(isinstance(evidence_ids, list) and all(nonempty(x) for x in evidence_ids),
                 'Step ' + step_id + ' has invalid evidence_ids')
+        if tool:
+            require(any(tool in item for item in must),
+                    'Step ' + step_id + ' declares tool "' + tool + '" but must_include never names it; '
+                    'add an item such as "' + tool + ' window"')
+        missing_objects = [item for item in objects if not any(item in text for text in must)]
+        require(not missing_objects,
+                'Step ' + step_id + ' objects missing from must_include: ' + ', '.join(missing_objects)
+                + '; name every declared object in must_include')
         steps.append({'id': step_id, 'source': raw['source'], 'goal': raw['goal'],
                       'modality': raw['modality'], 'tool': tool, 'objects': objects,
                       'action': raw['action'],
@@ -203,7 +214,55 @@ def plan_ready_for_submit(state):
     return True
 
 
+def review_gate(state, base, required=()):
+    """Check the independent-review input whitelist before a receipt is recorded."""
+    missing = []
+    if state['require_materials_map']:
+        record = state.get('materials_map')
+        if record is None:
+            missing.append('MATERIALS_MAP.md (register_materials_map)')
+        elif not Path(record['path']).is_file():
+            missing.append('materials map file: ' + record['path'])
+    intention = state.get('intention')
+    if intention is None:
+        missing.append('confirmed intention (submit_intention + confirm)')
+    elif not Path(intention['path']).is_file():
+        missing.append('intention file: ' + intention['path'])
+    if state['execution_required']:
+        plan = state.get('plan')
+        if plan is None:
+            missing.append('frozen execution card (freeze_plan)')
+        else:
+            if not Path(plan['path']).is_file():
+                missing.append('execution card file: ' + plan['path'])
+            uncompleted = [step['id'] for step in plan.get('steps', [])
+                           if step['id'] not in state['step_records']]
+            if uncompleted:
+                missing.append('uncompleted execution-card steps: ' + ', '.join(uncompleted))
+            binder = state.get('evidence_binder')
+            if not (isinstance(binder, dict) and binder.get('status') == 'ok'):
+                missing.append('evidence binder (bind_evidence)')
+    if not state.get('draft'):
+        missing.append('candidate draft (submit_draft)')
+    else:
+        for item in state['draft']:
+            if not Path(item['path']).is_file():
+                missing.append('draft file: ' + item['path'])
+    require(isinstance(required, (list, tuple)) and all(nonempty(name) for name in required),
+            'required must be a list of nonempty paths')
+    for name in required:
+        path = (base / name).resolve()
+        if not path.is_file():
+            missing.append('required path: ' + str(path))
+    require(not missing, 'Review input whitelist incomplete; missing: ' + '; '.join(missing))
+    return {'ok': True, 'extra_required': list(required)}
+
+
 def validate_plan_state(state):
+    require(isinstance(state.get('execution_required'), bool), 'Invalid execution_required marker')
+    require(isinstance(state.get('require_materials_map'), bool), 'Invalid materials-map gate marker')
+    materials_map = state.get('materials_map')
+    require(materials_map is None or valid_artifact(materials_map), 'Invalid materials map record')
     require(isinstance(state.get('step_records'), dict), 'Invalid step records')
     require(isinstance(state.get('plan_invalidated'), bool), 'Invalid plan invalidation marker')
     binder = state.get('evidence_binder')
@@ -211,6 +270,8 @@ def validate_plan_state(state):
     plan = state.get('plan')
     if plan is None:
         require(not state['step_records'] and binder is None, 'Step progress without a frozen plan')
+        require(not state['execution_required'] or state['phase'] not in {'review', 'done'},
+                'execution_required task has no frozen execution card; freeze_plan before writing')
         if state['phase'] in {'review', 'done'}:
             require(not state['plan_invalidated'], 'Refreeze the changed execution card before writing')
         return
@@ -462,10 +523,43 @@ def apply(state, request, base, store=None):
         check_used(state, store)
     elif action == 'submit_intention':
         require(phase in {'intake', 'awaiting_confirmation'}, 'Return to intake to change scope')
+        if state['require_materials_map']:
+            record = state['materials_map']
+            require(record is not None,
+                    'No MATERIALS_MAP.md registered; run register_materials_map before submit_intention '
+                    '(or disable the gate with set_require_materials_map and a reason)')
+            map_path = Path(record['path'])
+            require(map_path.is_file(),
+                    'Registered materials map is missing: ' + record['path'] + '; re-register the actual file')
+            require(digest(map_path) == record['sha256'],
+                    'Materials map changed since registration; re-register the current file before submitting the intention')
+            map_ids = request.get('map_ids')
+            require(isinstance(map_ids, list) and map_ids and all(nonempty(item) for item in map_ids),
+                    'submit_intention needs map_ids: a nonempty list of MATERIALS_MAP.md ids referenced by hard requirements')
+            map_text = map_path.read_text(encoding='utf-8', errors='replace')
+            unknown = [item for item in map_ids if item not in map_text]
+            require(not unknown, 'map_ids not found in the materials map: ' + ', '.join(unknown))
         plan_was_frozen = state['plan'] is not None
         state.update(intention=artifact(base, request.get('path')), approval=None, review=None,
                      phase='awaiting_confirmation', plan=None, step_records={}, evidence_binder=None,
                      plan_invalidated=state['plan_invalidated'] or plan_was_frozen)
+    elif action == 'register_materials_map':
+        require(phase in {'intake', 'awaiting_confirmation'},
+                'Register the materials map before confirming the intention; rerun intake to change it later')
+        state['materials_map'] = artifact(base, request.get('path'))
+        state['review'] = None
+    elif action == 'set_require_materials_map':
+        require(phase in {'intake', 'awaiting_confirmation'},
+                'Set the materials-map gate before confirming the intention; rerun intake to change it later')
+        require(isinstance(request.get('require_materials_map'), bool) and nonempty(request.get('reason')),
+                'Set require_materials_map true/false with a concrete reason')
+        state['require_materials_map'] = request['require_materials_map']
+    elif action == 'set_execution_required':
+        require(phase in {'intake', 'awaiting_confirmation'},
+                'Set execution_required before confirming the intention; rerun intake to change it after execution starts')
+        require(isinstance(request.get('execution_required'), bool) and nonempty(request.get('reason')),
+                'Set execution_required true/false with a concrete reason')
+        state['execution_required'] = request['execution_required']
     elif action == 'confirm':
         require(phase == 'awaiting_confirmation' and state['intention'] and not state['impact_pending'], 'No ready intention to confirm')
         require(nonempty(request.get('message_ref')), 'Supply actual user confirmation reference; do not invent one')
@@ -521,13 +615,21 @@ def apply(state, request, base, store=None):
     elif action == 'submit_draft':
         require(phase == 'produce' and approved(state), 'Production requires confirmed intention')
         require(not state['plan_invalidated'], 'Refreeze the changed execution card before writing')
-        if state['plan'] is not None:
+        if state['execution_required']:
+            require(state['plan'] is not None,
+                    'This task declares execution_required: freeze_plan a confirmed execution card before submit_draft')
+            plan_ready_for_submit(state)
+        elif state['plan'] is not None:
             plan_ready_for_submit(state)
         candidate = artifacts(base, request.get('paths'))
         require(bool(candidate), 'Candidate cannot be empty')
         state.update(draft=candidate, evidence=artifacts(base, request.get('evidence', [])), review=None, phase='review')
+    elif action == 'review_gate':
+        require(phase in {'review', 'done'}, 'Review gate runs after submit_draft; produce the candidate first')
+        review_gate(state, base, request.get('required', []))
     elif action == 'record_review':
         require(phase == 'review', 'Not ready for review')
+        review_gate(state, base, request.get('required', []))
         require(not state['memory_impact_pending'], 'Unresolved memory impact requires local revalidation')
         require(all(a['result'] != 'pending' for x in state['lessons_used'] for a in x['applications']), 'Unrecorded memory application')
         state['review'] = review_record(base, state, request.get('path'))
@@ -580,12 +682,19 @@ def transact(path, request, memory_root=None):
     if request.get('action') == 'init':
         require(not path.exists(), 'State already exists; never silently reset')
         require(nonempty(request.get('maker')), 'Maker identity required')
+        execution_required = request.get('execution_required', True)
+        require_materials_map = request.get('require_materials_map', True)
+        require(isinstance(execution_required, bool), 'execution_required must be true or false')
+        require(isinstance(require_materials_map, bool), 'require_materials_map must be true or false')
         state = dict(schema=1, phase='intake', maker=request['maker'], sources=artifacts(path.parent, request.get('sources', [])),
                      intention=None, draft=[], evidence=[], approval=None, review=None, impact_pending=False,
-                     waiting_reason=None, resume_phase=None, hold=None, events=[])
+                     waiting_reason=None, resume_phase=None, hold=None, events=[],
+                     execution_required=execution_required, require_materials_map=require_materials_map,
+                     materials_map=None)
         memory_defaults(state)
-        plan_defaults(state)
-        event(state, 'init', 'Initialized; no user approval implied')
+        plan_defaults(state, execution_required, require_materials_map)
+        event(state, 'init', 'Initialized; execution_required=' + str(execution_required)
+              + '; no user approval implied')
     else:
         state = read_json(path)
         require(isinstance(state, dict), 'State must be an object')
@@ -655,6 +764,9 @@ def main():
                           'lessons_used': state['lessons_used'], 'lessons_receipt': state['lessons_receipt'],
                           'memory_impact_pending': state['memory_impact_pending'],
                           'plan_frozen': bool(state['plan'] and state['plan'].get('frozen')),
+                          'execution_required': state['execution_required'],
+                          'require_materials_map': state['require_materials_map'],
+                          'materials_map': state['materials_map'],
                           'steps_completed': sorted(state['step_records']),
                           'evidence_binder_ok': bool(state['evidence_binder']
                                                      and state['evidence_binder'].get('status') == 'ok')}, ensure_ascii=False))

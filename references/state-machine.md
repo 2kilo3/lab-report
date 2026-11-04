@@ -8,36 +8,52 @@
 
 每个请求都有 `action`，附加字段如下：
 
-- init：maker（制作上下文身份）、sources（原始材料路径数组，可以为空但不能遗漏真实已有材料）。现存状态禁止重新初始化。
-- submit_intention：path（意图 MD）。仅 intake/awaiting_confirmation 可用，进入 awaiting_confirmation。
+- init：maker（制作上下文身份）、sources（原始材料路径数组，可以为空但不能遗漏真实已有材料）、execution_required（可选，默认 true：制作+实验任务必须冻结执行卡）、require_materials_map（可选，默认 true：意图前必须登记材料地图）。现存状态禁止重新初始化。
+- set_execution_required：execution_required（布尔值）、reason。仅在 intake/awaiting_confirmation 可用；纯审查/纯写作任务可在确认前显式关闭执行卡门。
+- submit_intention：path（意图 MD）、map_ids（`require_materials_map=true` 时必填：非空字符串数组，每项须在已登记地图文本中出现）。仅 intake/awaiting_confirmation 可用，进入 awaiting_confirmation。地图未登记、文件丢失或登记后已改动时拒绝。
+- register_materials_map：path（`MATERIALS_MAP.md`）。仅确认意图前可用；登记路径与当前 SHA-256，供 submit_intention 机器校验。
+- set_require_materials_map：require_materials_map（布尔值）、reason。仅确认意图前可用；任务确实不需要材料地图时才显式关闭。
 - confirm：message_ref（真实用户确认对话位置）。只可在待确认态使用；记录当前意图 SHA-256，进入 produce。工具不能验证这段引用是真的，宿主必须核实；绝不自动生成或将脚本成功当作授权。
 - submit_draft：paths（当前候选成果路径数组，至少一项）、evidence（证据路径数组，按任务可为空）。仅 produce，进入 review。
-- status：无其他字段。返回 phase、waiting_reason、basis（sources/intention/draft/evidence 的当前路径及摘要）。恢复前先调用；不是只显示过期标签。
-- record_review：path（独审 JSON 收据）。仅 review；严格比对下述字段。
+- status：无其他字段。返回 phase、waiting_reason、basis（sources/intention/draft/evidence 的当前路径及摘要），以及 execution_required、require_materials_map、materials_map 等门状态。恢复前先调用；不是只显示过期标签。
+- review_gate：required（可选，额外的非空路径数组）。仅 review/done 可用；检查材料地图、意图、冻结卡与逐步证据、当前成稿是否存在，缺项一次列出并拒绝。独审开始前运行；`record_review` 会自动执行同一检查。
+- record_review：path（独审 JSON 收据）。仅 review；先过 review_gate，再严格比对下述字段。
 - finish：仅 review 且现有收据仍匹配全部材料及检查时进入 done。不代表已上传或用户已验收。
 - rollback：to 为 intake/produce/review；reason 写具体问题、影响范围及回退依据。清除旧审核，保留所有成果文件。回 intake 同时撤销确认；其他回退不能跳过确认。未评估来源变化只允许回 intake，不因此消除待评估标记。
 - pause：kind 为 blocked 或 failed；reason 必填。保存恢复阶段，blocked 表示等待输入/权限等，不冒称执行失败。
 - resume：reason 写解除阻塞/修复依据；先查实际文件，不允许跳过来源影响评估。
 - set_sources：paths（新的完整原始材料路径数组）、reason。登记新增或调整来源清单，清除审核并进入待评估 blocked。
 - reassess：requirements_changed（布尔值）、reason（原始材料变更的影响依据）。仅检测到来源/清单变化后使用。若需求变化回 intake 并撤销确认；若已确认意图未改变回 produce，保留原用户确认但必须重新独审。不会要求无关内容重做。
-- freeze_plan：path（执行卡 JSON）、message_ref（真实用户确认引用）、reason（改卡/重冻结必填）。仅 produce 且意图已确认；卡本身必须 `frozen: true`，步骤须含 id、source、goal、modality、action、screenshot_required、must_include、forbidden_shortcuts、verify、on_fail。登记卡路径与摘要，清除旧步骤记录和证据绑定。
+- freeze_plan：path（执行卡 JSON）、message_ref（真实用户确认引用）、reason（改卡/重冻结必填）。仅 produce 且意图已确认；卡本身必须 `frozen: true`，步骤须含 id、source、goal、modality、action、screenshot_required、must_include、forbidden_shortcuts、verify、on_fail。登记卡路径与摘要，清除旧步骤记录和证据绑定。若某步填写 `tool` 或非空 `objects`，其 `must_include` 必须逐项点名：`tool` 作为某一项的子串出现，`objects` 每个元素都出现在至少一项中；缺失则拒绝冻结。
 - complete_step：id、evidence（真实证据路径数组，非空）、must_include（对象，逐项标 `pass` 或 `{"status":"pass"}`）。仅已冻结执行卡、produce 可用；缺证据、空文件、截图步无图片、漏项或未通过均拒绝；同一 id 不能重复完成。
 - bind_evidence：无附加字段。所有步骤完成且证据仍匹配后才能封存；摘要绑定当前卡与逐步验收结果，`submit_draft` 据此放行。
 
 ## 执行卡逐步证据门
 
-登记执行卡时，状态新增 `plan`、`step_records`、`evidence_binder`、`plan_invalidated`。旧任务默认 `None / {} / None / false`，原有意图→成稿→独审流程不变；未登记执行卡的任务（如纯审查）不经过逐步门。状态文件中的 `plan.steps` 是 `freeze_plan` 时从卡文件规范化后的副本，卡文件本身才是权威来源。`freeze_plan` 还会保存可选的 `tool`（具名工具）与 `objects`（拓扑节点、主机名等对象清单）；旧卡没有这两个字段仍有效，它们只随计划和证据绑定保存，是否逐项出现在证据中仍由执行者与独审核对。
+登记执行卡时，状态新增 `plan`、`step_records`、`evidence_binder`、`plan_invalidated`。旧任务缺 `execution_required` 字段时按 false 处理，原有意图→成稿→独审流程不变并标为 deprecated 旁路；**新建 `init` 默认 `execution_required=true`**，此时无冻结卡或未完成/未绑定证据一律拒绝 `submit_draft`。纯审查、纯写作任务应在确认意图前用 `set_execution_required` 显式关闭并写理由。未登记执行卡的任务（如纯审查）不经过逐步门。状态文件中的 `plan.steps` 是 `freeze_plan` 时从卡文件规范化后的副本，卡文件本身才是权威来源。`freeze_plan` 还会保存可选的 `tool`（具名工具）与 `objects`（拓扑节点、主机名等对象清单）；冻结时二者必须被 `must_include` 点名覆盖，旧卡没有这两个字段仍有效，是否逐项出现在证据中仍由执行者与独审核对。
 
 | 动作 | 前置 | 拒绝条件 |
 | --- | --- | --- |
-| freeze_plan | 意图已确认，phase=produce | 卡未标 `frozen: true`；缺 message_ref；步骤结构非法或缺 forbidden_shortcuts；已存在卡/卡被外部改动/意图变化而重冻结缺 reason |
+| freeze_plan | 意图已确认，phase=produce | 卡未标 `frozen: true`；缺 message_ref；步骤结构非法或缺 forbidden_shortcuts；`tool`/`objects` 未被 `must_include` 点名覆盖；已存在卡/卡被外部改动/意图变化而重冻结缺 reason |
 | complete_step | 已冻结执行卡，phase=produce | 未冻结；步骤未知或已完成；证据缺失/为空/0 字节；`screenshot_required` 步无图片证据；must_include 未逐项通过 |
 | bind_evidence | 所有步骤已完成 | 仍有未完成步骤；证据文件缺失或摘要不符 |
-| submit_draft | 登记过执行卡时 | 卡未冻结；步骤未全完成；证据绑定缺失或与当前卡/步骤不符 |
+| submit_draft | `execution_required=true`，或登记过执行卡时 | 未冻结卡（`execution_required=true` 时不再有旁路）；步骤未全完成；证据绑定缺失或与当前卡/步骤不符 |
 
 `status` 额外返回 `plan_frozen`、`steps_completed`、`evidence_binder_ok`，恢复时先看实际卡与证据，不只看这些布尔值。卡文件被外部修改时，`status` 清除旧 plan、步骤记录和证据绑定并标 `plan_invalidated`，回到 produce；再次 `freeze_plan` 必须写 reason。卡同时绑定冻结时的意图摘要；意图变化会使卡失效，必须重新确认并冻结。某步证据文件变化时，该步记录和证据绑定失效，需重新采集并 `complete_step`。不要手改状态 JSON 绕过。
 
 脚本只检查文件存在、大小、图片扩展名、摘要和结构化验收结果；它不能判断截图内容是否可读、是否为空白、操作是否真的发生，也不能证明 GUI/CLI 模态没有冒充。这些仍由执行者按 [Step Card 与冻结](step-cards.md) 和 [禁止捷径目录](forbidden-shortcuts.md) 核对，并由独立审查复核。
+
+## 独审输入白名单门
+
+`review_gate` 在独立审查开始前核对可机器检查的白名单产物：`require_materials_map=true` 时须有已登记地图且文件存在；须有当前意图；`execution_required=true` 时须有冻结卡、全部步骤记录和有效证据绑定；须有当前成稿。`required` 可再追加渲染页、原图、日志等路径。缺项一次性列出，不因第一项失败就停止。该门只证明文件在位，不证明内容真实、审查独立或质量合格；宿主仍须按 [多会话与子代理编排](orchestration.md) 投喂原始材料并核实真实独审。
+
+命令示例（请求文件内为 `{"action":"review_gate","required":["render/page-1.png"]}`）：
+
+```sh
+python -B scripts/workflow_state.py --state task/state.json --request task/review-gate.json
+```
+
+
 
 ## 独审收据 JSON
 
@@ -65,7 +81,7 @@ requirements、writing、final_file 必须 pass，不可标不适用；其余条
 
 1. 建工作目录，将各次 action JSON 保存在其中。init → submit_intention。
 2. 用户确认实际意图后，confirm 填真实对话引用，开始授权范围内工作。
-3. 有实验执行时，先 freeze_plan 登记已确认执行卡，再逐步 complete_step；全部完成且证据匹配后 bind_evidence。未登记执行卡的任务跳过此门。
+3. 有实验执行时，先 freeze_plan 登记已确认执行卡，再逐步 complete_step；全部完成且证据匹配后 bind_evidence。新任务默认 `execution_required=true`，没有执行卡不得 `submit_draft`；纯审查/纯写作须在确认前用 `set_execution_required` 显式关闭。
 4. submit_draft 登记候选和证据。status 的 basis 交独审；独审检查原材料、意图、执行卡、逐步证据与成稿后写收据。
 5. record_review → finish。失败则按具体问题 rollback、修复、重新审查。不修改 JSON 强推状态。
 6. 中断恢复先 status；缺 Python 时沿本文件同样的状态和守门条件手工记录，明确未使用可执行校验器。
