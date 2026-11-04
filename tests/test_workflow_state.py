@@ -24,6 +24,8 @@ class WorkflowTests(unittest.TestCase):
             (self.root / name).write_text('synthetic fixture ' + name, encoding='utf-8')
         self.call('init', maker='maker-session', sources=['source.txt'],
                   execution_required=False, require_materials_map=False)
+        # The DONE gate requires deliverables newer than the recorded stage start.
+        os.utime(self.root / 'report.docx')
 
     def call(self, action, **kwargs):
         return w.transact(self.state, dict(action=action, **kwargs))
@@ -45,7 +47,7 @@ class WorkflowTests(unittest.TestCase):
         self.ready()
         self.receipt()
         self.call('record_review', path='review.json')
-        return self.call('finish')
+        return self.call('finish', artifacts=['report.docx'])
 
     def confirmed(self):
         self.call('submit_intention', path='意图.md')
@@ -174,7 +176,7 @@ class WorkflowTests(unittest.TestCase):
         self.call('submit_draft', paths=['report.docx'], evidence=['screen.png'])
         self.receipt()
         self.call('record_review', path='review.json')
-        self.assertEqual(self.call('finish')['phase'], 'done')
+        self.assertEqual(self.call('finish', artifacts=['report.docx'])['phase'], 'done')
 
     def test_new_intention_invalidates_frozen_card(self):
         self.write_plan()
@@ -229,13 +231,13 @@ class WorkflowTests(unittest.TestCase):
     def test_fresh_review_required(self):
         self.ready()
         with self.assertRaises(w.GuardError):
-            self.call('finish')
+            self.call('finish', artifacts=['report.docx'])
 
     def test_changed_done_draft_invalidates_review(self):
         self.finish()
         (self.root / 'report.docx').write_text('new candidate', encoding='utf-8')
         with self.assertRaises(w.GuardError):
-            self.call('finish')
+            self.call('finish', artifacts=['report.docx'])
         state = self.call('status')
         self.assertEqual(state['phase'], 'review')
         self.assertIsNone(state['review'])
@@ -282,7 +284,7 @@ class WorkflowTests(unittest.TestCase):
     def test_corrupt_state_does_not_advance(self):
         self.state.write_text('{invalid', encoding='utf-8')
         with self.assertRaises(ValueError):
-            self.call('finish')
+            self.call('finish', artifacts=['report.docx'])
         self.state.write_text(json.dumps({'schema': 1, 'phase': 'done', 'maker': 'x'}), encoding='utf-8')
         with self.assertRaises(w.GuardError):
             self.call('status')

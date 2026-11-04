@@ -1,8 +1,10 @@
 """Synthetic machine-gate contracts for 2.3; not real GUI/experiment validation."""
 import importlib.util
 import json
+import os
 from pathlib import Path
 import tempfile
+import time
 import unittest
 
 SCRIPT = Path(__file__).resolve().parents[1] / 'scripts' / 'workflow_state.py'
@@ -224,6 +226,91 @@ class MachineGateTests(unittest.TestCase):
         with self.assertRaises(w.GuardError) as caught:
             self.call('record_review', path='review.json')
         self.assertIn('materials map file', str(caught.exception))
+
+
+class DoneGateTests(unittest.TestCase):
+    """M5: finish must name real, non-empty artifacts newer than the stage start."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix='完成门 测试 ')
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.state = self.root / 'state.json'
+        for name in ('source.txt', '意图.md', 'report.docx', 'screen.png'):
+            (self.root / name).write_text('synthetic fixture ' + name, encoding='utf-8')
+        self.call('init', maker='maker-session', sources=['source.txt'],
+                  execution_required=False, require_materials_map=False)
+        # The deliverable exists before init only as a stale leftover until touched.
+        os.utime(self.root / 'report.docx')
+        self.call('submit_intention', path='意图.md')
+        self.call('confirm', message_ref='synthetic-test-only:user-confirmation')
+        self.call('submit_draft', paths=['report.docx'], evidence=['screen.png'])
+        self.write_receipt()
+
+    def call(self, action, **kwargs):
+        return w.transact(self.state, dict(action=action, **kwargs))
+
+    def write_receipt(self):
+        state = self.call('status')
+        value = dict(reviewer='reviewer-session', context_ref='synthetic-test-only:separate-context',
+                     basis=w.basis(state), verdict='pass',
+                     checks={key: {'status': 'pass', 'reason': 'Synthetic fixture check'} for key in w.CHECKS})
+        (self.root / 'review.json').write_text(json.dumps(value, ensure_ascii=False), encoding='utf-8')
+        self.call('record_review', path='review.json')
+
+    def test_finish_requires_artifact_list(self):
+        for request in ({}, {'artifacts': []}, {'artifacts': ['']}):
+            with self.assertRaises(w.GuardError) as caught:
+                self.call('finish', **request)
+            self.assertIn('artifacts', str(caught.exception))
+        self.assertEqual(self.call('status')['phase'], 'review')
+
+    def test_finish_rejects_missing_empty_stale_and_duplicate_artifacts(self):
+        (self.root / 'empty.docx').write_bytes(b'')
+        (self.root / 'stale.docx').write_text('old delivery', encoding='utf-8')
+        time.sleep(0.01)
+        old = time.time() - 3600
+        os.utime(self.root / 'stale.docx', (old, old))
+        cases = {
+            'missing.docx': 'missing artifact',
+            'empty.docx': 'empty artifact',
+            'stale.docx': 'stale artifact',
+        }
+        for name, message in cases.items():
+            with self.assertRaises(w.GuardError) as caught:
+                self.call('finish', artifacts=[name])
+            self.assertIn(message, str(caught.exception))
+        with self.assertRaises(w.GuardError) as caught:
+            self.call('finish', artifacts=['report.docx', 'report.docx'])
+        self.assertIn('duplicate artifact', str(caught.exception))
+        self.assertEqual(self.call('status')['phase'], 'review')
+
+    def test_finish_accepts_fresh_deliverable_and_records_it(self):
+        state = self.call('finish', artifacts=['report.docx'])
+        self.assertEqual(state['phase'], 'done')
+        record = state['done_artifacts'][0]
+        self.assertTrue(record['path'].endswith('report.docx'))
+        self.assertEqual(len(record['sha256']), 64)
+        self.assertGreater(record['size'], 0)
+        self.assertIn('mtime', record)
+
+    def test_missing_declared_done_artifact_fails_closed(self):
+        self.call('finish', artifacts=['report.docx'])
+        (self.root / 'report.docx').unlink()
+        with self.assertRaises(w.GuardError) as caught:
+            self.call('status')
+        self.assertIn('Declared done artifact is missing', str(caught.exception))
+
+    def test_legacy_state_without_stage_start_keeps_mtime_bypass(self):
+        value = json.loads(self.state.read_text(encoding='utf-8'))
+        del value['stage_started_at']
+        value.pop('done_artifacts', None)
+        self.state.write_text(json.dumps(value, ensure_ascii=False), encoding='utf-8')
+        old = time.time() - 3600
+        os.utime(self.root / 'report.docx', (old, old))
+        state = self.call('finish', artifacts=['report.docx'])
+        self.assertEqual(state['phase'], 'done')
+        self.assertIsNone(state['stage_started_at'])
 
 
 if __name__ == '__main__':
