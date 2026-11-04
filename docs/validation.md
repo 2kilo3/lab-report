@@ -67,6 +67,22 @@
 
 脚本只保存 `tool`/`objects` 并核对结构，不能判断截图是否真的出现该工具或对象；这仍由执行者与独立审查按实际画面核对。
 
+## 2.3.0 机器硬门增量验证
+
+日期：2026-11-04，Windows，Python 3.12.10，分支 `feat/machine-gates-2.3`（基于 main `141f3a6`）。
+
+- **M1 执行卡门**：新 `init` 默认 `execution_required=true`；此时 `submit_draft` 必须有冻结卡、全部步骤记录和有效证据绑定，不再允许 `plan is None` 旁路。`set_execution_required` 允许纯审查/纯写作在确认前写理由关闭。旧状态缺字段时默认 `false` 并标 deprecated 旁路。
+- **M2 材料地图门**：新 `init` 默认 `require_materials_map=true`。`register_materials_map` 登记路径与 SHA-256；`submit_intention` 拒绝未登记、文件丢失、登记后改动、缺 `map_ids` 或 id 未出现在地图文本中的请求。`set_require_materials_map` 可在确认前写理由关闭。
+- **M3 tool/objects 契约**：`freeze_plan` 时，填写 `tool` 须有 `must_include` 项包含工具名；`objects` 每项须出现在至少一项 `must_include`。旧卡无这两个字段仍可冻结；脚本不做画面识别。
+- **M4 独审白名单门**：新增 `review_gate` 动作；`record_review` 接收收据前自动执行。检查材料地图、意图、冻结卡/逐步证据/绑定、当前成稿及请求附带的渲染页/原图路径，缺项一次列出。
+- **M5 契约与样式抽检**：`tests/test_machine_gates.py` 覆盖 M1–M4 的合成契约；`scripts/docx_style_check.py` 与 `tests/test_docx_style_check.py` 用纯 OOXML 夹具检查标题段落 `eastAsia` 含黑体/SimHei 或 `sz` 大于正文基线。无 Word 安装即可运行。
+- **测试**：`python -B -m pytest -q` → **87 passed**。静态检查：`git diff --check` 通过；全部文本 UTF-8。
+- **场景标注**：`tests/scenarios.md` 55/57/59/60/62 增加“契约覆盖（合成单测，非真实 GUI/材料/页面）”说明；这些场景本身仍为 NOT EXECUTED，不能把契约测试写成真实实验或 Word 渲染已通过。
+
+边界：状态脚本只核对路径、摘要、结构字段和字符串出现；`docx_style_check.py` 只查显式 run 格式，不解析完整样式继承、不渲染页面、不证明 Word/WPS 显示一致。真实课程实验、真实模板、真实独立审查与宿主端到端仍未执行。
+
+
+
 ## 风险与可执行测试对应
 
 | 风险 | 自动化覆盖 |
@@ -79,6 +95,8 @@
 | 当前核查、关闭与去依赖 | revoked_authority_detected_with_unchanged_task_receipt、finish_holds_same_root_lock_through_done_write、off_does_not_remove_dependency_or_restore_old_review、root_identity_or_unavailability_denies_finish_but_detach_works、new_material_scope_rechecks_existing_adoption |
 | 不误伤、不复活与删除 | use_preserves_long_term_approval、broader_scope_cannot_bypass_revocation、same_source_independent_existing_rule_survives_revoke、delete_keeps_other_item_approval_and_scrubs_verification_text、delete_preserves_unconsumed_batch_decision_for_other_item、import_does_not_inherit_active_without_current_sources |
 | 宿主边界 | export_requires_clean_context_and_deduplicates 仅核对真实固定格式的合成样本；不能由 mock 推断默认注入已隔离 |
+| 2.3 执行卡/地图/工具与对象/独审白名单 | `tests/test_machine_gates.py` 的合成契约：无卡拒提交、地图登记与 map_ids、tool/objects 缺项拒冻结、review_gate 缺项拒绝；不证明真实截图或真实独审 |
+| 2.3 标题字体/字号升级 | `tests/test_docx_style_check.py` 的纯 OOXML 夹具：显式 eastAsia 黑体/SimHei 或 sz 超基线报违规；不代替 Word 渲染或继承样式全量分析 |
 
 测试名在 tests/test_*.py，均有 test_ 前缀。原 38 项行为设计未改成通过，新增 39–50 同样为真实宿主 NOT EXECUTED；合成覆盖和真实人审/宿主验证分开。
 

@@ -149,7 +149,7 @@
 
 | # | Pattern | Why AI prefers | Human alternative | Allowed when | Step Card |
 | --- | --- | --- | --- | --- | --- |
-| B19.1 | **Heading black-font blow-up** / 小节标题换黑体放大 | “标题要醒目” | 与正文同中文字体、同字号；模板允许时仅加粗 | 模板明确规定该级标题字体/字号 | 非执行卡项，由 [文档输出](document-output.md) 与 [审查清单](review-checklist.md) 核对；禁“把「1. 进阶 A…」改为黑体大字” |
+| B19.1 | **Heading black-font blow-up** / 小节标题换黑体放大 | “标题要醒目” | 与正文同中文字体、同字号；模板允许时仅加粗 | 模板明确规定该级标题字体/字号 | 非执行卡项，由 [文档输出](document-output.md) 与 [审查清单](review-checklist.md) 核对；可用 `scripts/docx_style_check.py` 对显式 run 格式做启发式抽检，但不能替代渲染查看；禁“把「1. 进阶 A…」改为黑体大字” |
 
 ## 使用提醒
 

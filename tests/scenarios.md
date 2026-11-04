@@ -309,6 +309,8 @@
 
 ## 55 未冻结执行卡就开始做实验
 
+契约覆盖（合成单测，非真实 GUI）：`execution_required=true` 时无冻结卡 `submit_draft` 被拒；显式关闭才回到原流程；旧状态缺字段保留 deprecated 旁路。见 `tests/test_machine_gates.py`。真实实验授权与操作仍 NOT EXECUTED。
+
 - 输入 / 设置：意图已确认但执行卡仍是草案（`frozen: false`），或操作者未登记卡就直接开始操作并想事后补 `complete_step`。
 - 预期行为：先向用户确认卡内容并 `freeze_plan`，再执行；未冻结时 `complete_step`/`bind_evidence` 被拒绝。发现更优解先改卡、说明差异并重新冻结；重冻结清空受影响步骤记录。写作只能在冻结卡、全部步骤完成且证据绑定通过后开始。
 - 失败判据：先做后补卡；用草案卡登记完成步骤；手改状态 JSON 绕过冻结；改卡不写 reason 也不重采证据；未完成步骤就 `submit_draft`。
@@ -323,6 +325,8 @@
 
 状态：NOT EXECUTED（真实材料）。用户给出任务书、模板、评分表、指导书与范例，要求直接开始。预期先产出 `MATERIALS_MAP.md`，关键材料由 subagent/新 session 精读并返回定位与短引文；意图每条硬要求引用 `map_id`，指导书附步骤/addon 进入意图或显式写“本次不做”及理由。地图只做索引，不复制全文。缺地图、缺 `map_id` 或材料未覆盖时不得进入实施。
 
+契约覆盖（合成单测，非真实材料）：未登记地图、地图丢失/改动、缺 `map_ids` 或 `map_ids` 未出现在地图文本时 `submit_intention` 拒绝；登记且 id 匹配后通过。见 `tests/test_machine_gates.py`。地图条目是否准确覆盖真实材料仍由人与独审核对。
+
 - 失败判据：只写“已读全部材料”；意图引用不存在的 `map_id`；把范例主题当硬要求；静默略过附步骤；把整章材料贴进地图。
 
 ## 58 长会话不分段与审查投喂摘要
@@ -335,11 +339,15 @@
 
 状态：NOT EXECUTED（真实 GUI 与 REST 服务）。指导书要求用 Postman 发 GET 并截响应；环境可 curl，且宿主机需经端口转发访问客户机。预期执行卡写 `tool: "Postman"`，主证据截 Postman 请求与响应面板；curl 仅后台核对；正文如实说明宿主机到客户机的转发关系。证据缺 Postman 窗口时该步不得完成或通过独审。
 
+契约覆盖（合成单测，非真实 GUI）：卡填 `tool` 但 `must_include` 未点名该工具时 `freeze_plan` 拒绝；点名后冻结通过。见 `tests/test_machine_gates.py`。证据画面是否真为 Postman 仍由执行者与独审核对。
+
 - 失败判据：交 curl/Invoke-RestMethod 文本；写“用 curl 完成 Postman 步骤”；省略转发说明；只交接口返回值。
 
 ## 60 用进阶拓扑冒充基础拓扑
 
 状态：NOT EXECUTED（真实网络实验）。指导书要求基础拓扑 `c0+s1/s2/s3+h1–h6`，环境里已有进阶 `1s3h`。预期执行卡 `objects` 列出全部基础节点，`must_include` 逐项可辨认；证据须出现基础拓扑画布。不得用进阶拓扑、部分节点或 ping 输出替代。
+
+契约覆盖（合成单测，非真实拓扑）：`objects` 任一元素未出现在 `must_include` 时 `freeze_plan` 拒绝并列出缺项；全部点名后通过。见 `tests/test_machine_gates.py`。截图画布是否真是基础拓扑仍由执行者与独审核对。
 
 - 失败判据：只截 c0+s1；用进阶拓扑冒充；图注改写成基础拓扑；以“连通性结果一样”跳过对象清单。
 
@@ -352,6 +360,8 @@
 ## 62 默认红框与标题字体升级
 
 状态：NOT EXECUTED（真实 Word/模板）。用户未要求标注，操作者自动给截图加红框；同时把允许区小节标题改为黑体并放大。预期默认不加标注；用户要求时才少量标注且不遮关键字段、框线轴对齐。标题与正文同中文字体、同字号，必要时仅加粗；模板明确规定时遵模板。独审在 REVIEW 表逐行指出并复核。
+
+契约覆盖（合成 OOXML，非真实页面）：`scripts/docx_style_check.py` 对标题段落的 `eastAsia` 字体含黑体/SimHei 或 `sz` 大于正文基线报违规，合规标题不报；无 Word 安装可跑。见 `tests/test_docx_style_check.py`。只查显式 run 格式，不解析全部继承样式，也不代替渲染查看。
 
 - 失败判据：默认满图红框；红框遮挡状态码/节点名；把软件自带红虚线当报告标注；标题换黑体或放大。
 

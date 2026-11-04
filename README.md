@@ -59,9 +59,9 @@ git clone https://github.com/2kilo3/lab-report.git
 
 再确认一份意图清单，随后自动补齐必要工作、写作、独立审查与修订复核，不强制小样二次审批；已确认且未变化的内容不反复询问。范例主要软参考整体样式，其次参考写法，不照搬事实。没有真实环境或证据时，先处理独立部分并列明缺口，不生成假截图。
 
-最小状态辅助器记录确认、当前成果版本、独审结果与局部回退，恢复时检查文件变化。它不替用户批准、不执行实验，也不能证明独审质量或防止同权限篡改。用法见 [状态与恢复](references/state-machine.md)。
+最小状态辅助器记录确认、当前成果版本、独审结果与局部回退，恢复时检查文件变化。它不替用户批准、不执行实验，也不能证明独审质量或防止同权限篡改。用法见 [状态与恢复](references/state-machine.md)。2.3.0 起，新任务默认要求登记材料地图（`map_ids` 须出现在地图中）并在写作前冻结执行卡；纯审查/纯写作须在确认前显式关闭对应门。独立审查前运行 `review_gate`，`record_review` 会再次检查白名单产物是否存在。
 
-涉及实验执行时，已确认意图先落成可逐步验收的执行卡（Step Card），经用户确认冻结后按卡执行；截图以冻结卡中 `screenshot_required` 的必截点为集合，不合并、不跳过中间验收点，发现更优解先改卡并重新冻结。GUI 与 CLI 证据不可互相冒充，后台哈希/命令只作核验。原则见 [仿人实验操作](references/human-ops.md)，具体模式见 [禁止捷径目录](references/forbidden-shortcuts.md)，字段与冻结流程见 [Step Card 与冻结](references/step-cards.md)。未登记执行卡的审查或纯文档任务保持原流程。
+涉及实验执行时，已确认意图先落成可逐步验收的执行卡（Step Card），经用户确认冻结后按卡执行；截图以冻结卡中 `screenshot_required` 的必截点为集合，不合并、不跳过中间验收点，发现更优解先改卡并重新冻结。GUI 与 CLI 证据不可互相冒充，后台哈希/命令只作核验。原则见 [仿人实验操作](references/human-ops.md)，具体模式见 [禁止捷径目录](references/forbidden-shortcuts.md)，字段与冻结流程见 [Step Card 与冻结](references/step-cards.md)。新任务默认必须有冻结执行卡才能提交成稿；纯审查或纯文档任务须在意图确认前用 `set_execution_required` 显式关闭并写理由。
 
 ### 3. 可选开启受监督经验
 
@@ -128,6 +128,7 @@ references/
   review-checklist.md        最终检查
   examples.md                条件化写作示例
 scripts/workflow_state.py   标准库状态辅助器
+scripts/docx_style_check.py 标题黑体/字号升级的 OOXML 启发式抽检
 scripts/experience_store.py 私有经验存储与统一门控
 scripts/host_adapter.py     显式检查点及离线来源薄适配
 scripts/build_diagrams.py   可维护 SVG/HTML 图示源生成器
@@ -150,6 +151,7 @@ docs/                       来源、验证、图示及 About 元数据
 
 | 版本 | 变化 |
 | --- | --- |
+| 2.3.0 | 机器硬门：新任务默认 `execution_required=true`（无冻结卡不得提交成稿）、`require_materials_map=true`（登记地图 + `map_id` 校验）；`tool`/`objects` 必须被 `must_include` 点名；独审前 `review_gate` 检查白名单产物；新增 OOXML 标题黑体/字号抽检；scenarios 55/57/59/60/62 标契约覆盖（真实 GUI 仍 NOT EXECUTED） |
 | 2.2.0 | 意图前增加材料地图硬门与 `map_id` 追溯；新增分段 session/子代理编排、审查输入白名单与 REVIEW 表；Step Card 支持具名工具与对象清单；标注默认关闭、禁止标题字体/字号升级；补充 Postman≠curl、拓扑对象、交互提示符、跨轮证据等仿人禁令 |
 | 2.1.0 | 增加受监督的私有经验层、会话增量采集、下次明确使用的人审、具体修订审批与治理；schema 2 双重审核绑定及交付在线核查；可选宿主检查点、Claude Mem 离线导入、Cursor 说明与同步图示 |
 | 2.0.1 | 明确作者姓名目标与最终保存/转换后的元数据回读匹配 |
