@@ -1,0 +1,83 @@
+{
+  "info": {
+    "name": "Training Local Lab",
+    "description": "Loopback-only teaching fixture. Not a course experiment result.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/health"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('health status is 200', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "pm.test('health body has status=ok and fixture=true', function () {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.status).to.eql('ok');",
+              "  pm.expect(body.fixture).to.eql(true);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "echo",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/echo?message=client"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('echo status is 200', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "pm.test('echo body message is client', function () {",
+              "  pm.expect(pm.response.json().message).to.eql('client');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "missing",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/missing"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('missing status is 404', function () {",
+              "  pm.response.to.have.status(404);",
+              "});",
+              "pm.test('missing body error is not_found', function () {",
+              "  pm.expect(pm.response.json().error).to.eql('not_found');",
+              "});"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

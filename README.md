@@ -28,7 +28,7 @@ PDF 仅在课程或用户要求时作为交付物。若只请求审查，输出�
 git clone https://github.com/2kilo3/lab-report.git
 ```
 
-把完整目录复制到相应位置，保留 `SKILL.md`、`references/`、`scripts/`、`docs/` 和 `tests/` 的相对关系。目标已有同名技能时先比较并备份，不直接覆盖。
+把完整目录复制到相应位置，保留 `SKILL.md`、`references/`、`scripts/`、`skills/`、`docs/` 和 `tests/` 的相对关系。目标已有同名技能时先比较并备份，不直接覆盖。
 
 | 宿主 | 项目级位置 | 使用方式 |
 | --- | --- | --- |
@@ -62,6 +62,8 @@ git clone https://github.com/2kilo3/lab-report.git
 最小状态辅助器记录确认、当前成果版本、独审结果与局部回退，恢复时检查文件变化。它不替用户批准、不执行实验，也不能证明独审质量或防止同权限篡改。用法见 [状态与恢复](references/state-machine.md)。2.3.0 起，新任务默认要求登记材料地图（`map_ids` 须出现在地图中）并在写作前冻结执行卡；纯审查/纯写作须在确认前显式关闭对应门。独立审查前运行 `review_gate`，`record_review` 会再次检查白名单产物是否存在。2.4.0 起，`finish` 必须列出实际交付产物并通过存在、非空、新鲜度检查；多会话并行时按 [共享资源与并发调度](references/shared-resources.md) 区分独占/离线步骤并用资源锁排他。
 
 涉及实验执行时，已确认意图先落成可逐步验收的执行卡（Step Card），经用户确认冻结后按卡执行；截图以冻结卡中 `screenshot_required` 的必截点为集合，不合并、不跳过中间验收点，发现更优解先改卡并重新冻结。GUI 与 CLI 证据不可互相冒充，后台哈希/命令只作核验。原则见 [仿人实验操作](references/human-ops.md)，具体模式见 [禁止捷径目录](references/forbidden-shortcuts.md)，字段与冻结流程见 [Step Card 与冻结](references/step-cards.md)。新任务默认必须有冻结执行卡才能提交成稿；纯审查或纯文档任务须在意图确认前用 `set_execution_required` 显式关闭并写理由。
+
+涉及 VMware 或 Postman 时，入口会按需读取随包的 [vmware-lab-pair](skills/vmware-lab-pair/SKILL.md) 或 [postman-local-lab](skills/postman-local-lab/SKILL.md)。两者连同脚本、参考与训练集合一起安装，用相对路径读取，无需单独注册子技能；真实机器配置和凭据留在包外。
 
 ### 3. 可选开启受监督经验
 
@@ -127,6 +129,9 @@ references/
   host-adapters.md           宿主检查点和可选 Claude Mem 导入
   review-checklist.md        最终检查
   examples.md                条件化写作示例
+skills/
+  vmware-lab-pair/          VMware 操作指引、GuestOps 探针与参考
+  postman-local-lab/        Postman 操作指引、训练夹具与正反例集合
 scripts/workflow_state.py   标准库状态辅助器
 scripts/docx_style_check.py 标题黑体/字号升级的 OOXML 启发式抽检
 scripts/experience_store.py 私有经验存储与统一门控
@@ -151,6 +156,7 @@ docs/                       来源、验证、图示及 About 元数据
 
 | 版本 | 变化 |
 | --- | --- |
+| 2.4.1 | 随包附带 VMware / Postman 工具技能，入口按需以相对路径读取；本机配置留在包外，保留 GUI 取证与真实实验边界 |
 | 2.4.0 | 并发与完成验证：新增共享资源与并发调度规则（独占/离线分类、批量采集、并发上限估算）与 `resource_lock.py`（原子锁、租约心跳、fencing token、`break-stale` 留痕）；编排增加非交互启动、心跳与 dead/stuck 判定；新增插图容器宽度与页面可读性规则、图/图题/正文一致审查及 `figure_fit_check.py` 估算抽检；`finish` 增加 DONE 产物门；新增破坏性操作检查点（B20）与变通申报（B21）；经验分层区分通用规则与课程特例 |
 | 2.3.0 | 机器硬门：新任务默认 `execution_required=true`（无冻结卡不得提交成稿）、`require_materials_map=true`（登记地图 + `map_id` 校验）；`tool`/`objects` 必须被 `must_include` 点名；独审前 `review_gate` 检查白名单产物；新增 OOXML 标题黑体/字号抽检；scenarios 55/57/59/60/62 标契约覆盖（真实 GUI 仍 NOT EXECUTED） |
 | 2.2.0 | 意图前增加材料地图硬门与 `map_id` 追溯；新增分段 session/子代理编排、审查输入白名单与 REVIEW 表；Step Card 支持具名工具与对象清单；标注默认关闭、禁止标题字体/字号升级；补充 Postman≠curl、拓扑对象、交互提示符、跨轮证据等仿人禁令 |
