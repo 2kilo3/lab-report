@@ -10,6 +10,10 @@ Codex 与 Claude Code 可通过各自技能目录发现根目录的 `SKILL.md`�
 
 DeepSeek harness 已核对 [官方文件系统技能说明](https://github.com/deepseek-ai/deepseek-harness/blob/687f282e8625c6b8d11ff58211a90524be2e4317/packages/skill/skill-filesystem/README.zh.md)：项目 `.dsh/skills`、`.agents/skills` 是默认扫描根，技能须为根直属 `<name>/SKILL.md`，具有 `name` 和 `description`。启用 `skill`、`skill-filesystem` 提供方及 `dsh-tool-skill` 消费工具；配置 `includeDefaultRoots=false` 会关闭默认根，届时需按该环境配置显式接入。源码支持目录结构不代表本技能已在该宿主完成运行验证。
 
+## 随包的实验工具技能
+
+涉及 VMware 时读 [vmware-lab-pair](../skills/vmware-lab-pair/SKILL.md)，涉及 Postman 时读 [postman-local-lab](../skills/postman-local-lab/SKILL.md)。完整复制 `skills/` 及其内部目录；各子技能脚本和参考相对该子技能根定位，与当前工作目录无关。它们提供可选 Python 标准库辅助器，仍需宿主已有的 VMware / Postman 工具和获准目标；不提供虚拟机、账户或软件安装。VMware 探针针对 Linux/POSIX 客户机；两者宿主实测范围为 Windows，其他平台未验证。Postman 训练夹具仅用于教学，真实服务直接用 CLI，要求 GUI 的报告仍须实际界面证据。
+
 ## 按实际任务选择工具
 
 | 需要完成的动作 | 可用路线 | 实际依赖与边界 |

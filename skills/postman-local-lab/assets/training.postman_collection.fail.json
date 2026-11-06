@@ -1,0 +1,30 @@
+{
+  "info": {
+    "name": "Training Local Lab - NEGATIVE health expects 201",
+    "description": "Deliberately failing loopback teaching fixture. Not a course experiment result.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "health (negative)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/health"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('health status is 201 (negative)', function () {",
+              "  pm.response.to.have.status(201);",
+              "});"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
